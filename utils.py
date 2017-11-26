@@ -7,6 +7,7 @@ import skvideo.io
 from IPython.display import HTML
 import cv2
 
+
 def showVid(fpath):
     # Add a time argument to suggest that chrome shouldn't cache the video.
     return HTML("""
@@ -15,12 +16,14 @@ def showVid(fpath):
     </video>
     """ % (fpath, time.time()))
 
+
 def saveVideo(frames, fpath, **tqdmKw):
     writer = skvideo.io.FFmpegWriter(fpath)
     for frame in tqdm.tqdm_notebook(frames, desc='video: %s' % os.path.basename(fpath), unit='frame', **tqdmKw):
         writer.writeFrame(frame)
     writer.close()
     return showVid(fpath)
+
 
 def show(img, ax=None, title=None):
     if ax is None:
@@ -31,7 +34,21 @@ def show(img, ax=None, title=None):
     if title is not None: ax.set_title(title)
     return ax.figure, ax
 
+
 def drawShape(img, pts, color=(0, 255, 0), alpha=1, beta=.3):
     bright = np.copy(img)
     cv2.fillPoly(bright, np.int_([pts]), color)
     return cv2.addWeighted(img, alpha, bright, beta, 0)
+
+
+def fig2img(fig):
+    from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+    from matplotlib.figure import Figure
+
+    canvas = FigureCanvas(fig)
+    ax = fig.gca()
+    canvas.draw()       # draw the canvas, cache the renderer
+    width, _ = fig.get_size_inches() * fig.get_dpi()
+    width = int(width)
+    image = np.fromstring(canvas.tostring_rgb(), dtype='uint8').reshape(-1, width, 3)
+    return image
