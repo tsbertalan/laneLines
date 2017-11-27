@@ -5,6 +5,10 @@ import tqdm
 
 from utils import show, drawShape, isInteractive
 
+import utils
+from importlib import reload
+reload(utils)
+
 
 class Undistorter(object):
     """Remove barrel distortion given checkerboard calibration images."""
@@ -157,11 +161,38 @@ def window_mask(width, height, img_ref, center, level):
     ] = 1
     return output
 
+class MarkingNotFoundError(ValueError):
+    pass
 
-class ConvolutionalMarkingFinder(object):
+class MarkingFinder(object):
+
+    # Doing this for multiple laneMarkings in each MarkingFinder
+    # allows us to do some work (like convolutions) only once per frame.
+    hintsx = (1280./4, 1280./4*3)
+
+    @property
+    def markings(self):
+        if not hasattr(self, '_markings') or len(self._markings) == 0:
+            self._markings = [LaneMarking([[hintx]*2, [0, 720]]) for hintx in self.hintsx]
+        return self._markings
+
+    @markings.setter
+    def markings(self, newMarkings):
+        self._markings = newMarkings
+
+    def __getitem__(self, index):
+        return self.markings[index]
+
+    def __len__(self):
+        return len(self.markings)
+
+    def update(self, image):
+        raise NotImplementedError
+
+class ConvolutionalMarkingFinder(MarkingFinder):
     """Search for lane markings with a convolution."""
     
-    def __init__(self, window_width=100, window_height=80, margin=100):
+    def __init__(self, window_width=100, window_height=80, margin=100, windowType='gaussian'):
         """
         Parameters
         ----------
@@ -177,148 +208,131 @@ class ConvolutionalMarkingFinder(object):
         self.window_width = window_width
         self.window_height = window_height
         self.margin = margin
+        self.windowType = windowType
 
-    def getOffsets(self, l_center, r_center, image):
-        l_min_index = int(max(l_center-self.margin,0))
-        l_max_index = int(min(l_center+self.margin, image.shape[1]))
-
-        r_min_index = int(max(r_center-self.margin,0))
-        r_max_index = int(min(r_center+self.margin, image.shape[1]))
-
-        return l_min_index, l_max_index, r_min_index, r_max_index
+    def getSearchBoxes(self, centers, image):
+        searchBoxes = []
+        for center in centers:
+            searchBoxes.append((
+                int(max(center - self.margin, 0)),
+                int(min(center + self.margin, image.shape[1])),
+            ))
+        return searchBoxes
     
-    def __call__(self, image, giveCentroids=False):
+    def update(self, image):
         """
         Parameters
         ----------
         image : ndarray
-        giveCentroids : bool, optional
 
         Returns
         -------
-        left : ndarray (2, n)
-            Positions of found nonzero pixels in left lane
-
-        right : ndarray (2, n)
-            Positions of found nonzero pixels in right lane
-
-        if giveCentroids:
-            window_colCentroids : list
-                Column (x) locations of the found window centroids.
+        window_centroids : list of lists
+            Column (x) locations of the found window centroids
         """
+
         window_width = self.window_width
         window_height = self.window_height
         margin = self.margin
+        nlevels = int(image.shape[0] / window_height)
 
-        # Store the (left,right) window centroid positions per level
-        window_colCentroids = []
-        window_rowCentroids = []
-        
-        # Store the included pixel indices
+        # Refer to a common set of nonzero pixels.
         nonzero = image.nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
-        left_lane_inds = []
-        right_lane_inds = []
 
-        # Box window
-        window = np.ones(window_width) # Create our window template that we will use for convolutions
+        ## Store some things per-marking, per-level.
+        # Store the window centroid positions per level.
+        window_centroids = [[None] * nlevels for m in self]
+        # Store the included pixel indices.
+        lane_inds = [[None] * nlevels for m in self]
 
-        # Gaussian window
-        window = np.exp(-np.linspace(-1, 1, window_width)**2)
+        # Create our window template that we will use for convolutions.
+        if self.windowType == 'gaussian':
+            # Gaussian window
+            window = np.exp(-np.linspace(-1, 1, window_width)**2)
+        else:
+            # Box window.
+            window = np.ones(window_width)
 
-        # First find the two starting positions for the left and right lane by using np.sum to get the vertical image slice
-        # and then np.convolve the vertical image slice with the window template 
+        # Get an initial guess for the centers.
+        centers = [initialGuessMarking(image.shape[0]) for initialGuessMarking in self]
 
-        # Sum quarter bottom of image to get slice, could use a different ratio
-        l_sum = np.sum(image[int(3*image.shape[0]/4):,:int(image.shape[1]/2)], axis=0)
-        l_center = np.argmax(np.convolve(window,l_sum))-window_width/2
-        r_sum = np.sum(image[int(3*image.shape[0]/4):,int(image.shape[1]/2):], axis=0)
-        r_center = np.argmax(np.convolve(window,r_sum))-window_width/2+int(image.shape[1]/2)
+        # Iterate over horizontal slices of the image.
+        for level in range(nlevels):
 
-        # Add what we found for the first layer
-        window_colCentroids.append((l_center,r_center))
-        window_rowCentroids.append(window_height/2)
-        
-        def saveIndices(l_center, r_center, level):
-            # Identify window boundaries in x and y (and right and left)
-            win_y_low = image.shape[0] - (level+1)*window_height
-            win_y_high = image.shape[0] - level*window_height
-            win_xleft_low = l_center - margin
-            win_xleft_high = l_center + margin
-            win_xright_low = r_center - margin
-            win_xright_high = r_center + margin
-            
-            # Identify the nonzero pixels in x and y within the window
-            good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & 
-            (nonzerox >= win_xleft_low) &  (nonzerox < win_xleft_high)).nonzero()[0]
-            good_right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & 
-            (nonzerox >= win_xright_low) &  (nonzerox < win_xright_high)).nonzero()[0]
-            
-            # Append these indices to the lists
-            left_lane_inds.append(good_left_inds)
-            right_lane_inds.append(good_right_inds)
-            
-        saveIndices(l_center, r_center, 0)
-            
-        # Go through each layer looking for max pixel locations
-        # fig, ax = plt.subplots()
-        for level in range(1,(int)(image.shape[0]/window_height)):
-
-            # convolve the window into the vertical slice of the image
+            # Sum over rows in this horizontal slice 
+            # to get the scaled mean row.
             image_layer = np.sum(image[
                 int(image.shape[0]-(level+1)*window_height)
                 :
                 int(image.shape[0]-level*window_height)
                 ,:
             ], axis=0)
-            
+
+            # Convolve the window into the signal.
             conv_signal = np.convolve(window, image_layer, mode='same')
 
-            # Find the best left centroid by using past left center as a reference
-            l_min_index, l_max_index, r_min_index, r_max_index = self.getOffsets(l_center, r_center, image)
-                
+            # Find the best left centroid by using past center as a reference.
+            searchBoxes = self.getSearchBoxes(centers, image)
+
             # Find the best centroids by using past centers as references.
             # TODO: If the bracketed portion is all-zero, consider that maybe this method has failed.
-            bracketed = conv_signal[l_min_index:l_max_index]
-            if bracketed.any():
-                l_center = np.argmax(bracketed)+l_min_index
-            bracketed = conv_signal[r_min_index:r_max_index]
-            if bracketed.any():
-                r_center = np.argmax(bracketed)+r_min_index
+            for i in range(len(self)):
+                lo, hi = searchBoxes[i]
+                bracketed = conv_signal[lo:hi]
+                if bracketed.any():
+                    # If the convolution picked up something in this bracket,
+                    # make that the new center.
+                    center = np.argmax(bracketed) + lo
+                else:
+                    # Otherwise, keep the old center (rather than using
+                    # the left border, as np.argmax would have naively done).
+                    center = centers[i]
 
-            # for i in (l_min_index, l_max_index, r_min_index, r_max_index):
-            #     ax.plot([i, i], [level, level+1], color='blue', linestyle='-')
-            # for i in (l_center, r_center):
-            #     ax.plot([i, i], [level, level+1], color='red', linestyle='-')
-            # ax.plot(level + image_layer / max(image_layer.max(), 1e-3) / 2, linestyle='-', color='black')
-            # ax.plot(level + conv_signal / max(conv_signal.max(), 1e-3), linestyle='-', color='green')
-            
-            # Add what we found for that layer
-            window_colCentroids.append((l_center,r_center))
-            window_rowCentroids.append(window_height * level + window_height/2)
-            
-            saveIndices(l_center, r_center, level)
-        # ax.legend()
-            
-        # Concatenate the arrays of indices
-        left_lane_inds = np.concatenate(left_lane_inds)
-        right_lane_inds = np.concatenate(right_lane_inds)
+                # Save centers for the next level.
+                centers[i] = center
 
-        # Extract left and right line pixel positions
-        leftx = nonzerox[left_lane_inds]
-        lefty = nonzeroy[left_lane_inds] 
-        rightx = nonzerox[right_lane_inds]
-        righty = nonzeroy[right_lane_inds]
+                ## Save our results for this level.
+                window_centroids[i][level] = center
 
-        # Concatenate x and y into 2-row arrays.
-        left = np.stack([leftx, lefty])
-        right = np.stack([rightx, righty])
+                # Identify window boundaries in x and y (and right and left).
+                win_y_low = image.shape[0] - (level+1)*window_height
+                win_y_high = image.shape[0] - level*window_height
+                win_x_low = center - margin
+                win_x_high = center + margin
+                
+                # Identify the nonzero pixels in x and y within the window.
+                good_inds = (
+                    (nonzeroy >= win_y_low) & (nonzeroy < win_y_high)
+                    & 
+                    (nonzerox >= win_x_low) & (nonzerox < win_x_high)
+                ).nonzero()[0]
+                
+                # Insert these indices in the lists.
+                lane_inds[i][level] = good_inds
 
-        if giveCentroids:
-            return left, right, window_colCentroids
-        else:
-            return left, right
+        # Concatenate the arrays of indices.
+        all_lane_inds = [np.concatenate(ii) for ii in lane_inds]
+
+
+        # Extract line pixel positions.
+        X = [nonzerox[ii] for ii in all_lane_inds]
+        Y = [nonzeroy[ii] for ii in all_lane_inds]
+
+        # Assemble 2-row point arrays.
+        markingsPoints = [
+            np.stack([x, y])
+            for (x, y) in zip(X, Y)
+        ]
+
+        # Generate the new lane markings.
+        self.markings = [
+            LaneMarking(points)
+            for points in markingsPoints
+        ]
+
+        self.window_centroids = window_centroids
 
     def paintCentroids(self, warped):
         """Draw centroids on an image."""
@@ -326,48 +340,46 @@ class ConvolutionalMarkingFinder(object):
         window_height = self.window_height
         margin = self.margin
         
-        left, right, window_centroids = self(warped, giveCentroids=True)
-        leftx, lefty = left
-        rightx, righty = right
+        if not hasattr(self, 'window_centroids'):
+            self.update(warped)
+        window_centroids = self.window_centroids
 
-        # If we found any window centers
-        if len(window_centroids) > 0:
+        output = np.dstack((warped, warped, warped)) # making the original road pixels 3 color channels
 
-            output = np.dstack((warped, warped, warped)) # making the original road pixels 3 color channels
+        # Points used to draw all the left and right windows
+        points = np.zeros_like(warped)
 
-            # Points used to draw all the left and right windows
-            points = np.zeros_like(warped)
+        # Go through each level and draw the windows    
+        for level in range(0, len(window_centroids[0])):
+            
+            # Iterate over lane markings.
+            for i in range(len(self)):
 
-            # Go through each level and draw the windows    
-            for level in range(0,len(window_centroids)):
-                # Draw search areas.
-                for i in range(2):
+                # Window_mask is a function to draw window areas
+                mask = window_mask(window_width, window_height, warped, window_centroids[i][level],level)
 
-                    # Window_mask is a function to draw window areas
-                    mask = window_mask(window_width, window_height, warped, window_centroids[level][i],level)
+                # Do some drawing.
+                if level > 0:
+                    centers = [xx[level] for xx in window_centroids]
+                    bounds = self.getSearchBoxes(centers, warped)
 
-                    # Do some drawing.
-                    if level > 0:
-                        l_min_index, l_max_index, r_min_index, r_max_index = self.getOffsets(*window_centroids[level-1], warped)
-                        bounds = ((l_min_index, l_max_index), (r_min_index, r_max_index))
+                    # Draw search box.
+                    href = warped.shape[0]
+                    perimeter = np.int32([np.stack([
+                        [bounds[i][0], bounds[i][1], bounds[i][1], bounds[i][0]],
+                        [href-level*window_height, href-level*window_height, href-(level+1)*window_height, href-(level+1)*window_height]
+                    ]).T])
+                    cv2.polylines(output, perimeter, isClosed=True, color=(255, 0, 0), thickness=4)
 
-                        # Draw search box.
-                        href = warped.shape[0]
-                        perimeter = np.int32([np.stack([
-                            [bounds[i][0], bounds[i][1], bounds[i][1], bounds[i][0]],
-                            [href-level*window_height, href-level*window_height, href-(level+1)*window_height, href-(level+1)*window_height]
-                        ]).T])
-                        cv2.polylines(output, perimeter, isClosed=True, color=(255, 0, 0), thickness=4)
+                    # Draw centroid as line.
+                    perimeter = np.int32([np.stack([
+                        [window_centroids[i][level]]*2,
+                        [href-level*window_height, href-(level+1)*window_height,]
+                    ]).T])
+                    cv2.polylines(output, perimeter, isClosed=False, color=(0, 0, 255), thickness=2)
 
-                        # Draw centroid as line.
-                        perimeter = np.int32([np.stack([
-                            [window_centroids[level][i]]*2,
-                            [href-level*window_height, href-(level+1)*window_height,]
-                        ]).T])
-                        cv2.polylines(output, perimeter, isClosed=False, color=(0, 0, 255), thickness=2)
-
-                    # Add graphic points from window mask here to total pixels found 
-                    points[mask == 1] = 255
+                # Add graphic points from window mask here to total pixels found 
+                points[mask == 1] = 255
 
             # Draw the results
             template = np.array(points, np.uint8)
@@ -382,10 +394,6 @@ class ConvolutionalMarkingFinder(object):
             template = np.array(cv2.merge(colored), np.uint8) # make window pixels green
             output = cv2.addWeighted(output, 1, template, 0.5, 0.0) # overlay the orignal road image with window results
 
-        # If no window centers found, just display orginal road image
-        else:
-            output = np.array(cv2.merge((warped,warped,warped)),np.uint8)
-
         return output
     
     def show(self, warped, **kwargs):
@@ -393,8 +401,8 @@ class ConvolutionalMarkingFinder(object):
         show(self.paintCentroids(warped), **kwargs)
 
 
-class IncrementalMarkingFinder(object):
-    """Use existing polynomial fits to guide the search for pixels in a new frame."""
+class MarginSearchMarkingFinder(MarkingFinder):
+    """Search in a margin around existing polynomial fits."""
 
     def __init__(self, margin=100):
         """
@@ -407,7 +415,7 @@ class IncrementalMarkingFinder(object):
         """
         self.margin = margin
 
-    def __call__(self, img, previousLaneMarkings):
+    def update(self, img):
         """Margin search method
 
         Parameters
@@ -429,7 +437,7 @@ class IncrementalMarkingFinder(object):
 
         # Find indices for points with x in +/- `margin` of the old fit.
         laneInds = []
-        for previousLaneMarking in previousLaneMarkings:
+        for previousLaneMarking in self:
             prevx = previousLaneMarking(nonzeroy)
             laneInds.append(
                 (nonzerox > prevx - self.margin) & (nonzerox < prevx + self.margin)
@@ -439,12 +447,23 @@ class IncrementalMarkingFinder(object):
         X = [nonzerox[laneInd] for laneInd in laneInds]
         Y = [nonzeroy[laneInd] for laneInd in laneInds]
 
+        for i in range(len(self)):
+            if len(X[i]) == 0:
+                # TODO: If we're going to use this method, this exception should be caught and handled by using a different method.
+                raise MarkingNotFoundError('Found no points for laneMarking %d of %d.' % (i+1, len(self)))
+
         # Assemble 2-row point arrays.
-        return [
+        markingsPoints = [
             np.stack((x, y))
             for (x, y) in zip(X, Y)
         ]
-    
+
+        # Generate the new lane markings.
+        self.markings = [
+            LaneMarking(points)
+            for points in markingsPoints
+        ]
+
 
 class Threshold(object):
     """Apply a mixture of color or texture thresholdings to a warped image."""
@@ -542,11 +561,20 @@ class LaneMarking(object):
         order : int, optional
             Order for the fitting polynomial. Probably don't want to mess with this.
         """
+        points = np.asarray(points)
         assert points.shape[0] == 2
         self.x, self.y = x, y = points
         # TODO: Use RANSAC to do the fitting.
-        self.fit = np.polyfit(y, x, order)
-        self.worldFit = np.polyfit(y*ym_per_pix, x*xm_per_pix, order)
+        # Construct the fits by hand if a vertical line is given,
+        # to avoid RankWarning from numpy.
+        if len(set(x)) == 1:
+            self.fit = np.zeros((order+1,))
+            self.fit[-1] = x[0]
+            self.worldFit = np.zeros((order+1,))
+            self.worldFit[-1] = x[0] * xm_per_pix
+        else:
+            self.fit = np.polyfit(y, x, order)
+            self.worldFit = np.polyfit(y * ym_per_pix, x * xm_per_pix, order)
         self.order = order
         self.xm_per_pix = xm_per_pix
         self.ym_per_pix = ym_per_pix
@@ -618,11 +646,8 @@ class LaneFinder(object):
         # Function for transforming perspective.
         self.perspective = PerspectiveTransformer()
 
-        # Function for doing the initial marking discovery.
-        self.initialDiscovery = ConvolutionalMarkingFinder()
-
-        # Function for finding markings given a previous guesses.
-        self.incrementalUpdate = IncrementalMarkingFinder()
+        # Function for marking discovery.
+        self.markingFinder = ConvolutionalMarkingFinder()
 
     def preprocess(self, frame, color=False):
         # Remove barrel distortion.
@@ -637,25 +662,13 @@ class LaneFinder(object):
         return frame
      
     def __call__(self, frame):
+        # Do our preprocessing.
         frame = self.preprocess(frame)
         
         # Find the lane markings.
-        if hasattr(self, 'laneMarkings'):
-            # If we already have fits, go with an incremental update
-            # by searching around them.
-            leftPoints, rightPoints = self.initialDiscovery(frame)
-            #leftPoints, rightPoints = self.incrementalUpdate(frame, self.laneMarkings)
+        self.markingFinder.update(frame)
+        self.laneMarkings = self.markingFinder.markings
 
-        else:
-            # Use the histogram or convolutional method
-            # to find the fits on the first step.
-            leftPoints, rightPoints = self.initialDiscovery(frame)
-
-        self.laneMarkings = (
-            LaneMarking(leftPoints),
-            LaneMarking(rightPoints),
-        )
-            
         return self.laneMarkings
 
     def metersRightOfCenter(self, left, right, yeval=720, imgWidth=1280):
@@ -704,7 +717,7 @@ class LaneFinder(object):
                 isClosed=False, color=(255, 0, 0),
                 thickness=4,
             )
-        centroids = self.initialDiscovery.paintCentroids(self.preprocess(frame))
+        centroids = self.markingFinder.paintCentroids(self.preprocess(frame))
         inset = cv2.addWeighted(inset, 1.0, centroids, 0.5, 0)
 
         if insetThresholds:
