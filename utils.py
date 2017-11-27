@@ -9,6 +9,10 @@ import cv2
 
 
 def showVid(fpath):
+    """Display a video as a Jupyter HTML widget.
+
+    Use a relative path that is accessible via the jupyter notebook webserver.
+    """
     # Add a time argument to suggest that chrome shouldn't cache the video.
     return HTML("""
     <video width=100%% controls autoplay loop>
@@ -18,6 +22,7 @@ def showVid(fpath):
 
 
 def saveVideo(frames, fpath, **tqdmKw):
+    """Save a collection of images to a video file. I've tried .mp4 extensions."""
     writer = skvideo.io.FFmpegWriter(fpath)
     for frame in tqdm.tqdm_notebook(frames, desc='video: %s' % os.path.basename(fpath), unit='frame', **tqdmKw):
         writer.writeFrame(frame)
@@ -26,6 +31,7 @@ def saveVideo(frames, fpath, **tqdmKw):
 
 
 def show(img, ax=None, title=None):
+    """Display an image without x/y ticks."""
     if ax is None:
         fig, ax = plt.subplots()
     ax.imshow(img)
@@ -36,12 +42,15 @@ def show(img, ax=None, title=None):
 
 
 def drawShape(img, pts, color=(0, 255, 0), alpha=1, beta=.3):
+    """Fill a polygon on an image."""
     bright = np.copy(img)
     cv2.fillPoly(bright, np.int_([pts]), color)
     return cv2.addWeighted(img, alpha, bright, beta, 0)
 
 
 def fig2img(fig):
+    """Render a Matplotlib figure to an image; good for simple video-making."""
+    # stackoverflow.com/questions/35355930
     from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
     from matplotlib.figure import Figure
 

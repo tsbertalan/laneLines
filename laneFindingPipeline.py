@@ -5,7 +5,9 @@ import tqdm
 
 from utils import show, drawShape
 
+
 class Undistorter(object):
+    """Remove barrel distortion given checkerboard calibration images."""
     
     def __init__(self, nx=9, ny=6):
         self.nx = nx
@@ -21,12 +23,17 @@ class Undistorter(object):
             img = cv2.imread(img)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         self.imageShape = gray.shape[::-1]
-        #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         ret, corners = cv2.findChessboardCorners(gray, (self.nx, self.ny), None)
         if ret:
             self.imgp.append(corners)
             
     def fit(self, imgs):
+        """
+        Parameters
+        ----------
+        imgs : iterable of str or ndarray
+            Either paths to image files or the images loaded with cv2.imread
+        """
         for img in tqdm.tqdm_notebook(imgs, unit='frame', desc='cal. undistort'):
             self.fitImg(img)
         self.calcParams()
@@ -38,19 +45,44 @@ class Undistorter(object):
         )
         
     def __call__(self, img):
+        """
+        Parameters
+        ----------
+        img : ndarray
+
+        Returns
+        -------
+        out : ndarray
+            The undistorted image.
+        """
         if isinstance(img, str):
             img = cv2.imread(img)
         return cv2.undistort(img, self.mtx, self.dist, None, self.mtx)
 
 
 class PerspectiveTransformer(object):
+    """Warp a trapezoid to fill a rectangle."""
     
-    def __init__(self, shape=(1280, 720), horizonRadius=.025, horizonLevel=.6, d=200.):
+    def __init__(self, shape=(1280, 720), horizonRadius=.025, horizonLevel=.6, d=200):
+        """
+        Parameters
+        ----------
+        shape : tuple of ints, optional
+            width and height of the input image
+        hoizonRadius : float, optional
+            Fraction of the image width occupied by the top of the trapezoid.
+        horizonLevel : float, optional
+            Fraction of the height down from the top at which the trapezoid height is located.
+        d : int, optional
+            Margin, in pixels, between left and right sides of image and target rectangle.
+        """
+        # TODO: Put the bottom of the trapezoid above the car hood.
         self.shape = shape
         self.horizonRadius = horizonRadius
         self.horizonLevel = horizonLevel
         self.d = d
         self.setup()
+        self.recalc()
 
     def setup(self, srcDst=None):
         if srcDst is None:
@@ -61,7 +93,7 @@ class PerspectiveTransformer(object):
                  [0, h], [w, h]]
             ).astype('float32')
             dst = np.array(
-                [[w-d, 0], [d, 0], 
+                [[w-d, 0.], [d, 0.], 
                  [d, h], [w-d, h]]
             ).astype('float32')
             srcDst = src, dst
@@ -83,6 +115,7 @@ class PerspectiveTransformer(object):
 
 
 def transformChessboard(img, nx=9, ny=6):
+    """Use the corners of a chessboard pattern to supply src points for a perspective transform."""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     ret, corners = cv2.findChessboardCorners(gray, (nx, ny), None)
     assert ret
@@ -96,20 +129,29 @@ def transformChessboard(img, nx=9, ny=6):
     dst[0, 1] = dst[1, 1] = t
     dst[1, 0] = dst[3, 0] = r
     dst[2, 1] = dst[3, 1] = b
-    transformer = PerspectiveTransformer(src, dst)
+    transformer = PerspectiveTransformer()
+    transformer.setup((src, dst))
     return transformer(img)
 
 
 def window_mask(width, height, img_ref, center, level):
+    """Generate a boolean mask for a rectangular region."""
+    href, wref = img_ref.shape[:2]
     output = np.zeros_like(img_ref)
     output[
-        int(img_ref.shape[0]-(level+1)*height):int(img_ref.shape[0]-level*height),
-        max(0,int(center-width/2)):min(int(center+width/2),img_ref.shape[1])
+        int(href - (level + 1) * height)
+        :
+        int(href - level * height),
+        
+        max(0, int(center - width / 2))
+        :
+        min(int(center + width / 2), wref)
     ] = 1
     return output
 
 
 class ConvolutionalMarkingFinder(object):
+    """Search for lane markings with a convolution."""
     
     def __init__(self, window_width=100, window_height=80, margin=100):
         """
@@ -117,8 +159,10 @@ class ConvolutionalMarkingFinder(object):
         ----------
         window_width : int, optional
             Break image into (image_height / window_height) layers.
+
         window_width : int, optional
             Width of the kernel.
+
         margin : int, optional
             How much to slide left and right for searching.
         """
@@ -135,21 +179,15 @@ class ConvolutionalMarkingFinder(object):
 
         Returns
         -------
-        leftx
-            Column (x) positions of found nonzero pixels in left lane
+        left : ndarray (2, n)
+            Positions of found nonzero pixels in left lane
 
-        lefty
-            Row (y) positions of found nonzero pixels in left lane
-
-        rightx
-            Column (x) positions of found nonzero pixels in right lane
-
-        righty
-            Row (y) positions of found nonzero pixels in right lane
+        right : ndarray (2, n)
+            Positions of found nonzero pixels in right lane
 
         if giveCentroids:
             window_colCentroids : list
-
+                Column (x) locations of the found window centroids.
         """
         window_width = self.window_width
         window_height = self.window_height
@@ -256,6 +294,7 @@ class ConvolutionalMarkingFinder(object):
             return left, right
 
     def paintCentroids(self, warped):
+        """Draw centroids on an image."""
         window_width = self.window_width
         window_height = self.window_height
         margin = self.margin
@@ -294,21 +333,38 @@ class ConvolutionalMarkingFinder(object):
         return output
     
     def show(self, warped, **kwargs):
+        """Visualize."""
         show(self.paintCentroids(warped), **kwargs)
 
 
 class IncrementalMarkingFinder(object):
+    """Use existing polynomial fits to guide the search for pixels in a new frame."""
 
     def __init__(self, margin=100):
+        """
+        Paramters
+        ---------
+        margin : int, optional
+            How much to look left and right of the previous
+            fit polynomial for nonzero pixels.
+
+        """
         self.margin = margin
 
     def __call__(self, img, previousLaneMarkings):
+        """Margin search method
 
-        # Margin search method
+        Parameters
+        ----------
+        img : ndarray
+        previousLaneMarkings : list of LaneMarking
+            Zero or more (probably two) LaneMarking objects.
 
-        # Assume you now have a new warped binary image 
-        # from the next frame of video (also called "binary_warped")
-        # It's now much easier to find line pixels!
+        Returns
+        -------
+        points : list of ndarrays
+            Zero or more coordinate arrays of shape (2, n)
+        """
 
         # Find the points highlighted by our thresholding.
         nonzero = img.nonzero()
@@ -335,12 +391,32 @@ class IncrementalMarkingFinder(object):
     
 
 class Threshold(object):
+    """Apply a mixture of color or texture thresholdings to a warped image."""
 
     def __init__(self, s_thresh=(170, 255), sx_thresh=(20, 100)):
+        """
+        Parameters
+        ----------
+        s_thresh : tuple of int, optional
+            Lower and upper bounds on S (saturation) channel.
+            Picks up colorful road markings (like bright yellow centerlines).
+
+        sx_thresh : tuple of int, optional
+            Lower and upper bounds on sobel-x.
+            Picks up strongly vertical edges.
+
+        """
         self.s_thresh = s_thresh
         self.sx_thresh = sx_thresh
 
     def __call__(self, img, color=False):
+        """
+        Parameters
+        ----------
+        img : ndarray
+        color : bool, optional
+            If False, all filters will be combined into one boolean (0 or 255) array.
+        """
         s_thresh = self.s_thresh
         sx_thresh = self.sx_thresh
 
@@ -372,6 +448,7 @@ class Threshold(object):
             return color_binary.astype('uint8')
         else:
             cb = color_binary
+            # TODO: Why is this still an 8-bit array? Would numpy pack it better if it was truly boolean?
             return np.logical_or(
                 np.logical_or(
                     cb[:, :, 0], cb[:, :, 1]),
@@ -380,22 +457,43 @@ class Threshold(object):
 
 
 class LaneMarking(object):
+    """Convenince class for storing polynomial fit and pixels for a lane marking."""
 
     def __init__(self, points, order=2):
+        """
+        Parameters
+        ----------
+        points : ndarray, shape (2, n)
+            Associated pixel locations
+
+        order : int, optional
+            Order for the fitting polynomial. Probably don't want to mess with this.
+        """
         assert points.shape[0] == 2
         self.x, self.y = x, y = points
         self.fit = np.polyfit(y, x, order)
 
     def __call__(self, y=None):
+        """Calculate y (row) as a function of x (column).
+
+        Parameters
+        ----------
+        y : ndarray, optional
+            If not given, the data we used to generate the fit will be reused.
+        """
         if y is None:
             y = self.y
         # Even though there will be duplicate values in y,
         # this default vectorized version is about 50% faster
         # than a dict-backed memoized version.
+        # This might be different with thicker lane markings
+        # (more y values to map to the same x).
         return np.polyval(self.fit, y)
 
     def show(self, ax, plotKwargs=dict(color='green', linewidth=1), **scatterKwargs):
-        scatterKwargs.setdefault('s', .1)
+        """Visualize."""
+        scatterKwargs.setdefault('s', 100)
+        scatterKwargs.setdefault('alpha', .02)
         x, y = self.x, self.y
         order = np.argsort(y)
         y = y[order]
@@ -410,10 +508,13 @@ class LaneMarking(object):
 
 
 class LaneFinder(object):
+    """Stateful lane-marking finder for hood camera video."""
     
     def __init__(self, 
         undistort=None,
         ):
+
+        # SET ALL CALLABLE ATTRIBUTES.
         
         # Function for removing barrel distortion.
         if undistort is None:
@@ -462,7 +563,11 @@ class LaneFinder(object):
             
         return self.laneMarkings
 
-    def show(self, frame, axes=None, alpha=.02):
+    def show(self, frame, axes=None):
+        """Visualize.
+
+        About 6x slower than function itself, fyi.
+        """
         if axes is None:
             fig, axes = plt.subplots(nrows=2)
 
@@ -478,7 +583,7 @@ class LaneFinder(object):
 
         # Plot the lane markings and (faintly) their associated pixels.
         for laneMarking in self(frame):
-            laneMarking.show(ax, alpha=alpha, s=100)
+            laneMarking.show(ax)
 
         # Clean up the figure.
         ax.set_xticks([])
