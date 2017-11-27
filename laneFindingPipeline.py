@@ -468,7 +468,7 @@ class LaneMarking(object):
     """Convenince class for storing polynomial fit and pixels for a lane marking."""
     # TODO: Try using a histogram of y values to classify broken and solid markings.
 
-    def __init__(self, points, order=2, xm_per_pix=3.7/679.8, ym_per_pix=30/718.6, radiusYeval=720):
+    def __init__(self, points, order=2, xm_per_pix=3.7/491.3, ym_per_pix=30/200, radiusYeval=720):
         """
         Parameters
         ----------
