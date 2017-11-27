@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import cv2
 import tqdm
 
-from utils import show, drawShape
+from utils import show, drawShape, isInteractive
 
 
 class Undistorter(object):
@@ -34,7 +34,9 @@ class Undistorter(object):
         imgs : iterable of str or ndarray
             Either paths to image files or the images loaded with cv2.imread
         """
-        for img in tqdm.tqdm_notebook(imgs, unit='frame', desc='cal. undistort'):
+        if isInteractive: bar = tqdm.tqdm_notebook
+        else: bar = tqdm.tqdm
+        for img in bar(imgs, unit='frame', desc='cal. undistort'):
             self.fitImg(img)
         self.calcParams()
         
@@ -82,7 +84,6 @@ class PerspectiveTransformer(object):
         self.horizonLevel = horizonLevel
         self.d = d
         self.setup()
-        self.recalc()
 
     def setup(self, srcDst=None):
         if srcDst is None:
@@ -458,8 +459,9 @@ class Threshold(object):
 
 class LaneMarking(object):
     """Convenince class for storing polynomial fit and pixels for a lane marking."""
+    # TODO: Try using a histogram of y values to classify broken and solid markings.
 
-    def __init__(self, points, order=2):
+    def __init__(self, points, order=2, xm_per_pix=3.7/679.8, ym_per_pix=30/718.6, radiusYeval=720):
         """
         Parameters
         ----------
@@ -471,7 +473,13 @@ class LaneMarking(object):
         """
         assert points.shape[0] == 2
         self.x, self.y = x, y = points
+        # TODO: Use RANSAC to do the fitting.
         self.fit = np.polyfit(y, x, order)
+        self.worldFit = np.polyfit(y*ym_per_pix, x*xm_per_pix, order)
+        self.order = order
+        self.xm_per_pix = xm_per_pix
+        self.ym_per_pix = ym_per_pix
+        self.radiusYeval = radiusYeval
 
     def __call__(self, y=None):
         """Calculate y (row) as a function of x (column).
@@ -506,6 +514,16 @@ class LaneMarking(object):
 
         return ax.figure, ax
 
+    @property
+    def radius(self):
+        yeval = self.radiusYeval * self.ym_per_pix
+        fit = np.poly1d(self.worldFit)
+        xp = np.polyder(fit,  m=1)
+        xpp = np.polyder(fit, m=2)
+        num = (1 + xp ** 2)(yeval)
+        den = abs(xpp(yeval))
+        return num ** (3./2) / den
+
 
 class LaneFinder(object):
     """Stateful lane-marking finder for hood camera video."""
@@ -534,8 +552,8 @@ class LaneFinder(object):
 
         # Function for finding markings given a previous guesses.
         self.incrementalUpdate = IncrementalMarkingFinder()
-     
-    def __call__(self, frame):
+
+    def preprocess(self, frame):
         # Remove barrel distortion.
         frame = self.undistort(frame)
         
@@ -544,6 +562,11 @@ class LaneFinder(object):
         
         # Do a mixture of color/Sobel thresholdings.
         frame = self.threshold(frame)
+
+        return frame
+     
+    def __call__(self, frame):
+        frame = self.preprocess(frame)
         
         # Find the lane markings.
         if hasattr(self, 'laneMarkings'):
@@ -562,6 +585,10 @@ class LaneFinder(object):
         )
             
         return self.laneMarkings
+
+    def metersRightOfCenter(self, left, right, yeval=720, imgWidth=1280):
+        centerline = np.mean([left(yeval), right(yeval)])
+        return (imgWidth / 2. - centerline) * left.xm_per_pix
 
     def show(self, frame, axes=None):
         """Visualize.

@@ -61,3 +61,8 @@ def fig2img(fig):
     width = int(width)
     image = np.fromstring(canvas.tostring_rgb(), dtype='uint8').reshape(-1, width, 3)
     return image
+
+def isInteractive():
+    """Are we in a notebook?"""
+    import __main__ as main
+    return not hasattr(main, '__file__')
