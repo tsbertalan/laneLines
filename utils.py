@@ -30,13 +30,14 @@ def saveVideo(frames, fpath, **tqdmKw):
     return showVid(fpath)
 
 
-def show(img, ax=None, title=None):
+def show(img, ax=None, title=None, clearTicks=True):
     """Display an image without x/y ticks."""
     if ax is None:
         fig, ax = plt.subplots()
     ax.imshow(img)
-    ax.set_xticks([])
-    ax.set_yticks([])
+    if clearTicks:
+        ax.set_xticks([])
+        ax.set_yticks([])
     if title is not None: ax.set_title(title)
     return ax.figure, ax
 

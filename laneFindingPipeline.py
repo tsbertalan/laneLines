@@ -65,7 +65,7 @@ class Undistorter(object):
 class PerspectiveTransformer(object):
     """Warp a trapezoid to fill a rectangle."""
     
-    def __init__(self, shape=(1280, 720), horizonRadius=.025, horizonLevel=.6, d=200):
+    def __init__(self, shape=(1280, 720), horizonRadius=.025, horizonLevel=.6, hoodPixels=60, d=200):
         """
         Parameters
         ----------
@@ -75,6 +75,8 @@ class PerspectiveTransformer(object):
             Fraction of the image width occupied by the top of the trapezoid.
         horizonLevel : float, optional
             Fraction of the height down from the top at which the trapezoid height is located.
+        hoodPixels : int, optional
+            How many pixels to crop from the bottom for the hood.
         d : int, optional
             Margin, in pixels, between left and right sides of image and target rectangle.
         """
@@ -82,6 +84,7 @@ class PerspectiveTransformer(object):
         self.shape = shape
         self.horizonRadius = horizonRadius
         self.horizonLevel = horizonLevel
+        self.hoodPixels = hoodPixels
         self.d = d
         self.setup()
 
@@ -90,8 +93,12 @@ class PerspectiveTransformer(object):
             w, h = self.shape
             d = self.d
             src = np.array(
-                [[w*(.5+self.horizonRadius), h*self.horizonLevel], [w*(.5-self.horizonRadius), h*self.horizonLevel], 
-                 [0, h], [w, h]]
+                [
+                 [w*(.5+self.horizonRadius), h*self.horizonLevel], 
+                 [w*(.5-self.horizonRadius), h*self.horizonLevel], 
+                 [0, h-self.hoodPixels], 
+                 [w, h-self.hoodPixels],
+                ]
             ).astype('float32')
             dst = np.array(
                 [[w-d, 0.], [d, 0.], 
@@ -112,7 +119,7 @@ class PerspectiveTransformer(object):
             M = self.Minv
         else:
             M = self.M
-        return cv2.warpPerspective(img, M, img_size, borderMode=cv2.BORDER_REPLICATE)
+        return cv2.warpPerspective(img, M, img_size, borderMode=cv2.BORDER_CONSTANT)
 
 
 def transformChessboard(img, nx=9, ny=6):
@@ -553,7 +560,7 @@ class LaneFinder(object):
         # Function for finding markings given a previous guesses.
         self.incrementalUpdate = IncrementalMarkingFinder()
 
-    def preprocess(self, frame):
+    def preprocess(self, frame, color=False):
         # Remove barrel distortion.
         frame = self.undistort(frame)
         
@@ -561,7 +568,7 @@ class LaneFinder(object):
         frame = self.perspective(frame)
         
         # Do a mixture of color/Sobel thresholdings.
-        frame = self.threshold(frame)
+        frame = self.threshold(frame, color=color)
 
         return frame
      
@@ -589,6 +596,64 @@ class LaneFinder(object):
     def metersRightOfCenter(self, left, right, yeval=720, imgWidth=1280):
         centerline = np.mean([left(yeval), right(yeval)])
         return (imgWidth / 2. - centerline) * left.xm_per_pix
+
+    def draw(self, frame):
+        left, right = self(frame)
+        laneCurve = np.zeros_like(frame)
+
+        Ys = []
+        for line in left, right:
+            y = np.linspace(0, 720, 256)
+            if line is right:
+                y = y[::-1]
+            Ys.append(y)
+
+        points = np.hstack([
+            np.stack([line(y), y])
+            for (y, line) in zip(Ys, (left, right))
+        ])
+
+        cv2.fillConvexPoly(laneCurve, np.int32([points.T]), (232, 119, 34))
+        laneCurve = self.perspective(laneCurve, inv=True)
+        composite = cv2.addWeighted(frame, 1.0, laneCurve, 0.4, 0)
+        cv2.polylines(
+            composite, np.int32([self.perspective.src]), 
+            isClosed=True, color=(255, 105, 180),
+            thickness=1,
+        )
+
+        def addInset(img, r, c, f=.2):
+            newsize = int(img.shape[1]*f), int(img.shape[0]*f)
+            small = cv2.resize(img, newsize, interpolation=cv2.INTER_AREA)
+            composite[r:r+small.shape[0], c:c+small.shape[1], :] = small
+
+        inset = self.preprocess(frame, color=True)
+        for (y, line) in zip(Ys, (left, right)):
+            cv2.polylines(
+                inset, np.int32([np.stack([line(y), y]).T]),
+                isClosed=False, color=(255, 0, 0),
+                thickness=4,
+            )
+        addInset(inset, 100, 1000)
+
+        y = 50
+        for text in [
+            'left radius: %.5g [m]' % left.radius,
+            'right radius: %.5g [m]' % right.radius,
+            'offset from centerline: %.3g [m]' % self.metersRightOfCenter(left, right),
+        ]:
+            cv2.putText(
+                composite, 
+                text,
+                (10, y),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=1,
+                color=(255, 255, 255),
+                lineType=cv2.LINE_AA,
+            )
+            y += 50
+
+        return composite
 
     def show(self, frame, axes=None):
         """Visualize.
