@@ -175,10 +175,13 @@ class MarkingFinder(object):
     # allows us to do some work (like convolutions) only once per frame.
     hintsx = (1280./4, 1280./4*3)
 
+    def getHintedLaneMarking(self, i):
+        return LaneMarking([[self.hintsx[i]]*2, [0, 720]])
+
     @property
     def markings(self):
         if not hasattr(self, '_markings') or len(self._markings) == 0:
-            self._markings = [LaneMarking([[hintx]*2, [0, 720]]) for hintx in self.hintsx]
+            self._markings = [self.getHintedLaneMarking(i) for i in range(len(self.hintsx))]
         return self._markings
 
     @markings.setter
@@ -193,6 +196,53 @@ class MarkingFinder(object):
 
     def update(self, image):
         raise NotImplementedError
+
+    def evaluateFitQuality(self, lowPointsThresh=1, radiusRatioThresh=500):
+
+        ## Check single-marking quality indicators.
+        # Some points were actually found?
+        acceptables = [True] * len(self)
+        for i, laneMarking in enumerate(self):
+            
+            if len(laneMarking.x) <= lowPointsThresh:
+                acceptables[i] = False
+
+        ## Check paired quality indicators:
+        # Radii aren't drastically different?
+        assert len(self) == 2
+        left, right = self
+        rads = [left.radius, right.radius]
+        rads.sort()
+        if rads[1] / rads[0] > radiusRatioThresh:
+            acceptables = [False] * 2
+
+        # The two fits aren't actually the same?
+        a = left.worldFit
+        b = right.worldFit
+        assert len(a) == len(b)
+        # Different thresholds are appropriate for different coeffients.
+        thresholds = [10**-(k+1) for k in range(len(a))][::-1]
+        if not (np.abs(a - b) > thresholds).any():
+            acceptables = [False] * 2
+
+        for i, acceptable in enumerate(acceptables):
+            if not acceptable:
+                self.markings[i] = self.getHintedLaneMarking(i)
+
+        # Report to the caller whether all laneMarkings passed inspection.
+        return np.all(acceptables)
+
+    def postUpdateQualityCheck(self, image, recursionDepth, maxRecursion=2):
+        # Check some quality metrics on the found lines.
+        # If they're found lacking, the checker will replace them
+        # with the default guesses. We can then try the update again.
+        if not self.evaluateFitQuality():
+
+            print('Some lane markings failed inspection!')
+            if recursionDepth > 0:
+                print('(recursion #%d)' % (recursionDepth,))
+            if recursionDepth <= maxRecursion:
+                self.update(image, recursionDepth=recursionDepth+1)
 
 
 class ConvolutionalMarkingFinder(MarkingFinder):
@@ -225,7 +275,7 @@ class ConvolutionalMarkingFinder(MarkingFinder):
             ))
         return searchBoxes
     
-    def update(self, image):
+    def update(self, image, recursionDepth=0):
         """
         Parameters
         ----------
@@ -355,6 +405,8 @@ class ConvolutionalMarkingFinder(MarkingFinder):
         ]
 
         self.window_centroids = window_centroids
+
+        self.postUpdateQualityCheck(image, recursionDepth)
 
     def paint(self, warped):
         """Draw centroids on an image."""
@@ -777,10 +829,22 @@ class LaneFinder(object):
             composite = cv2.addWeighted(composite, 1.0, self.perspective(inset, inv=True), 0.8, 0)
 
         y = 50
+        alphaStrings = [
+            'a = [%s]' % (
+                ', '.join([
+                    '%.12g' % a
+                    for a in self.laneMarkings[i].worldFit
+                ])
+            )
+            for i in range(len(self.laneMarkings))
+        ]
         for text in [
             'left radius: %.5g [m]' % left.radius,
+            alphaStrings[0],
             'right radius: %.5g [m]' % right.radius,
+            alphaStrings[1],
             'offset from centerline: %.3g [m]' % self.metersRightOfCenter(left, right),
+
         ]:
             cv2.putText(
                 composite, 
