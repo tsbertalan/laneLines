@@ -1,11 +1,16 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import cv2
+
+from sklearn.linear_model import RANSACRegressor
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import make_pipeline
+
+import matplotlib.pyplot as plt
 import tqdm
 
 from utils import show, drawShape, isInteractive
-
 import utils
+
 from importlib import reload
 reload(utils)
 
@@ -287,8 +292,8 @@ class ConvolutionalMarkingFinder(MarkingFinder):
                     # make that the new center.
                     center = np.argmax(bracketed) + lo
                 else:
-                    if level == 1:
-                        # If this is just the second level, do nothing.
+                    if level <= 1:
+                        # If this is just the first or second level, do nothing.
                         center = centers[i]
                     else:
                         # Otherwise, do some simple linear projection.
@@ -326,10 +331,16 @@ class ConvolutionalMarkingFinder(MarkingFinder):
         # Concatenate the arrays of indices.
         all_lane_inds = [np.concatenate(ii) for ii in lane_inds]
 
-
         # Extract line pixel positions.
         X = [nonzerox[ii] for ii in all_lane_inds]
         Y = [nonzeroy[ii] for ii in all_lane_inds]
+
+        # If the location arrays are somehow totally empty, revert to default vertical lines.
+        for i in range(len(self)):
+            if len(X[i]) == 0:
+                assert len(Y[i]) == 0
+                X[i] = np.array((self.hintsx[i],), X[i].dtype)
+                Y[i] = np.zeros((1,), Y[i].dtype)
 
         # Assemble 2-row point arrays.
         markingsPoints = [
@@ -533,7 +544,6 @@ class Threshold(object):
         s_thresh = self.s_thresh
 
         img = np.copy(img)
-        print('Blurring.')
         img = cv2.GaussianBlur(img, self.blurSize, 0)
 
         # Convert to HLS color space and separate the V channel
@@ -566,11 +576,23 @@ class Threshold(object):
             ).astype('uint8') * 255
 
 
+def regressPoly(x, y, order, ransac=False):
+    # scikit-learn.org/stable/auto_examples/linear_model/plot_robust_fit.html#sphx-glr-auto-examples-linear-model-plot-robust-fit-py
+    # scikit-learn.org/stable/modules/generated/sklearn.linear_model.RANSACRegressor.html
+    if not ransac:
+        return np.polyfit(x, y , order)
+    else:
+        estimator = RANSACRegressor(random_state=42)
+        model = make_pipeline(PolynomialFeatures(order), estimator)
+        model.fit(x.reshape(x.size, 1), y)
+        return model._final_estimator.estimator_.coef_[::-1]
+
+
 class LaneMarking(object):
     """Convenince class for storing polynomial fit and pixels for a lane marking."""
     # TODO: Try using a histogram of y values to classify broken and solid markings.
 
-    def __init__(self, points, order=2, xm_per_pix=3.7/491.3, ym_per_pix=30/300, radiusYeval=720, imageSize=(720, 1280)):
+    def __init__(self, points, order=2, xm_per_pix=3.7/491.3, ym_per_pix=30/300, radiusYeval=720, imageSize=(720, 1280), ransac=False):
         """
         Parameters
         ----------
@@ -592,8 +614,8 @@ class LaneMarking(object):
             self.worldFit = np.zeros((order+1,))
             self.worldFit[-1] = x[0] * xm_per_pix
         else:
-            self.fit = np.polyfit(y, x, order)
-            self.worldFit = np.polyfit(y * ym_per_pix, x * xm_per_pix, order)
+            self.fit = regressPoly(y, x, order, ransac=ransac)
+            self.worldFit = regressPoly(y * ym_per_pix, x * xm_per_pix, order, ransac=ransac)
         self.order = order
         self.xm_per_pix = xm_per_pix
         self.ym_per_pix = ym_per_pix
@@ -641,6 +663,8 @@ class LaneMarking(object):
         xpp = np.polyder(fit, m=2)
         num = (1 + xp ** 2)(yeval)
         den = abs(xpp(yeval))
+        if den == 0:
+            return np.inf
         return num ** (3./2) / den
 
 
