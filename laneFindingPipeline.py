@@ -69,7 +69,7 @@ class Undistorter(object):
 class PerspectiveTransformer(object):
     """Warp a trapezoid to fill a rectangle."""
     
-    def __init__(self, shape=(1280, 720), horizonRadius=.06, horizonLevel=.62, hoodPixels=60, d=200):
+    def __init__(self, shape=(1280, 720), horizonRadius=.1, horizonLevel=.65, hoodPixels=60, d=200):
         """
         Parameters
         ----------
@@ -310,8 +310,8 @@ class ConvolutionalMarkingFinder(MarkingFinder):
                 # Identify window boundaries in x and y (and right and left).
                 win_y_low = image.shape[0] - (level+1)*window_height
                 win_y_high = image.shape[0] - level*window_height
-                win_x_low = center - margin
-                win_x_high = center + margin
+                win_x_low = center - window_width / 2
+                win_x_high = center + window_width / 2
                 
                 # Identify the nonzero pixels in x and y within the window.
                 good_inds = (
@@ -345,8 +345,9 @@ class ConvolutionalMarkingFinder(MarkingFinder):
 
         self.window_centroids = window_centroids
 
-    def paintCentroids(self, warped):
+    def paint(self, warped):
         """Draw centroids on an image."""
+        assert len(warped.shape) == 2, '`warped` should be single-channel'
         window_width = self.window_width
         window_height = self.window_height
         margin = self.margin
@@ -392,7 +393,7 @@ class ConvolutionalMarkingFinder(MarkingFinder):
                 # Add graphic points from window mask here to total pixels found 
                 points[mask == 1] = 255
 
-            # Draw the results
+            # Draw the best-found windows.
             template = np.array(points, np.uint8)
             zero_channel = np.zeros_like(template) # create a zero color channel
             colored = [None]*3
@@ -409,7 +410,7 @@ class ConvolutionalMarkingFinder(MarkingFinder):
     
     def show(self, warped, **kwargs):
         """Visualize."""
-        show(self.paintCentroids(warped), **kwargs)
+        show(self.paint(warped), **kwargs)
 
 
 class MarginSearchMarkingFinder(MarkingFinder):
@@ -479,7 +480,7 @@ class MarginSearchMarkingFinder(MarkingFinder):
 class Threshold(object):
     """Apply a mixture of color or texture thresholdings to a warped image."""
 
-    def __init__(self, s_thresh=(170, 255), sx_thresh=20, dilate_kernel=(2, 6), dilationIterations=3):
+    def __init__(self, s_thresh=(170, 255), sx_thresh=20, dilate_kernel=(2, 6), dilationIterations=3, blurSize=(5,5)):
         """
         Parameters
         ----------
@@ -496,30 +497,14 @@ class Threshold(object):
         self.sx_thresh = sx_thresh
         self.dilate_kernel = dilate_kernel
         self.dilationIterations = dilationIterations
+        self.blurSize = blurSize
 
-    def __call__(self, img, color=False):
-        """
-        Parameters
-        ----------
-        img : ndarray
-        color : bool, optional
-            If False, all filters will be combined into one boolean (0 or 255) array.
-        """
-        s_thresh = self.s_thresh
+    def dilateSobel(self, singleChannel):
         sx_thresh = self.sx_thresh
         dilate_kernel = self.dilate_kernel
         dilationIterations = self.dilationIterations
 
-        img = np.copy(img)
-
-        # Convert to HLS color space and separate the V channel
-        hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS).astype(np.float)
-        l_channel = hls[:,:,1]
-        s_channel = hls[:,:,2]
-
-        # Sobel x
-        sobelx = cv2.Sobel(l_channel, cv2.CV_64F, 1, 0) # Take the derivative in x
-        # TODO: Only keep x gradients that are repeat in a up-down fashion, separated by ~25 pixels.
+        sobelx = cv2.Sobel(singleChannel, cv2.CV_64F, 1, 0) # Take the derivative in x
 
         # Sobel mask.
         mask_neg = (sobelx < -sx_thresh).astype(np.float32)
@@ -534,7 +519,30 @@ class Threshold(object):
         kernel = np.ones(dilate_kernel, np.uint8)
         kernel[:, mid:] = 0
         dmask_pos = cv2.dilate(mask_pos, kernel, iterations=dilationIterations) > 0.
-        sxbinary = (dmask_pos * dmask_neg).astype(np.uint8)
+        sxbinary = (dmask_pos & dmask_neg).astype(np.uint8)
+        return sxbinary
+
+    def __call__(self, img, color=False):
+        """
+        Parameters
+        ----------
+        img : ndarray
+        color : bool, optional
+            If False, all filters will be combined into one boolean (0 or 255) array.
+        """
+        s_thresh = self.s_thresh
+
+        img = np.copy(img)
+        print('Blurring.')
+        img = cv2.GaussianBlur(img, self.blurSize, 0)
+
+        # Convert to HLS color space and separate the V channel
+        hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS).astype(np.float)
+        l_channel = hls[:,:,1]
+        s_channel = hls[:,:,2]
+
+        # Sobel x, with up/down dilation trick.
+        sxbinary = self.dilateSobel(l_channel)
         
         # Threshold color channel
         s_binary = np.zeros_like(s_channel)
@@ -562,7 +570,7 @@ class LaneMarking(object):
     """Convenince class for storing polynomial fit and pixels for a lane marking."""
     # TODO: Try using a histogram of y values to classify broken and solid markings.
 
-    def __init__(self, points, order=2, xm_per_pix=3.7/491.3, ym_per_pix=30/300, radiusYeval=720):
+    def __init__(self, points, order=2, xm_per_pix=3.7/491.3, ym_per_pix=30/300, radiusYeval=720, imageSize=(720, 1280)):
         """
         Parameters
         ----------
@@ -590,6 +598,7 @@ class LaneMarking(object):
         self.xm_per_pix = xm_per_pix
         self.ym_per_pix = ym_per_pix
         self.radiusYeval = radiusYeval
+        self.imageSize = imageSize
 
     def __call__(self, y=None):
         """Calculate y (row) as a function of x (column).
@@ -608,7 +617,7 @@ class LaneMarking(object):
         # (more y values to map to the same x).
         return np.polyval(self.fit, y)
 
-    def show(self, ax, plotKwargs=dict(color='green', linewidth=1), **scatterKwargs):
+    def show(self, ax, plotKwargs=dict(color='magenta', linewidth=4), **scatterKwargs):
         """Visualize."""
         scatterKwargs.setdefault('s', 100)
         scatterKwargs.setdefault('alpha', .02)
@@ -618,7 +627,7 @@ class LaneMarking(object):
         x = x[order]
         ax.scatter(x, y, **scatterKwargs)
 
-        y = np.linspace(y[0], y[-1], 1000)
+        y = np.linspace(0, self.imageSize[0], 1000)
         x = self(y)
         ax.plot(x, y, **plotKwargs)
 
@@ -706,6 +715,12 @@ class LaneFinder(object):
             ])
             laneCurve = np.zeros_like(frame)
             cv2.fillConvexPoly(laneCurve, np.int32([points.T]), (232, 119, 34))
+            for (y, line) in zip(Ys, (left, right)):
+                cv2.polylines(
+                    laneCurve, np.int32([np.stack([line(y), y]).T]),
+                    isClosed=False, color=(255, 0, 0),
+                    thickness=32,
+                )
             laneCurve = self.perspective(laneCurve, inv=True)
             composite = cv2.addWeighted(composite, 1.0, laneCurve, 0.4, 0)
 
@@ -726,9 +741,9 @@ class LaneFinder(object):
             cv2.polylines(
                 inset, np.int32([np.stack([line(y), y]).T]),
                 isClosed=False, color=(255, 0, 0),
-                thickness=4,
+                thickness=12,
             )
-        centroids = self.markingFinder.paintCentroids(self.preprocess(frame))
+        centroids = self.markingFinder.paint(self.preprocess(frame))
         inset = cv2.addWeighted(inset, 1.0, centroids, 0.5, 0)
 
         if insetThresholds:
@@ -771,7 +786,11 @@ class LaneFinder(object):
         ax = axes[-1]
 
         # Show the preprocessed image on the bottom.
-        preprocessed = self.threshold(self.perspective(self.undistort(frame)), color=True)
+        perspectived = self.perspective(self.undistort(frame))
+        preprocessed = self.threshold(perspectived, color=True)
+        if isinstance(self.markingFinder, ConvolutionalMarkingFinder):
+            warped = self.threshold(perspectived)
+            preprocessed = cv2.addWeighted(preprocessed, 1.0, self.markingFinder.paint(warped), 0.5, 0)
         ax.imshow(preprocessed)
 
         # Plot the lane markings and (faintly) their associated pixels.
