@@ -67,3 +67,12 @@ def isInteractive():
     """Are we in a notebook?"""
     import __main__ as main
     return not hasattr(main, '__file__')
+
+def drawLine(x, y, canvas, **kwargs):
+    kwargs.setdefault('isClosed', False)
+    x = np.asarray(x).ravel()
+    y = np.asarray(y).ravel()
+    return cv2.polylines(
+        canvas, np.int32([np.stack([x, y]).T]),
+        **kwargs
+    )

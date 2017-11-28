@@ -11,8 +11,11 @@ import tqdm
 from utils import show, drawShape, isInteractive
 import utils
 
+import smoothing
+
 from importlib import reload
 reload(utils)
+reload(smoothing)
 
 
 class Undistorter(object):
@@ -198,6 +201,7 @@ class MarkingFinder(object):
         raise NotImplementedError
 
     def evaluateFitQuality(self, lowPointsThresh=1, radiusRatioThresh=500):
+        self.failedLaneMarkings = []
 
         ## Check single-marking quality indicators.
         # Some points were actually found?
@@ -227,6 +231,7 @@ class MarkingFinder(object):
 
         for i, acceptable in enumerate(acceptables):
             if not acceptable:
+                self.failedLaneMarkings.append(self.markings[i])
                 self.markings[i] = self.getHintedLaneMarking(i)
 
         # Report to the caller whether all laneMarkings passed inspection.
@@ -248,7 +253,7 @@ class MarkingFinder(object):
 class ConvolutionalMarkingFinder(MarkingFinder):
     """Search for lane markings with a convolution."""
     
-    def __init__(self, window_width=100, window_height=80, margin=100, windowType='gaussian'):
+    def __init__(self, window_width=50, window_height=40, searchMargin=60, windowType='gaussian', verticalBias=0.5):
         """
         Parameters
         ----------
@@ -258,20 +263,21 @@ class ConvolutionalMarkingFinder(MarkingFinder):
         window_width : int, optional
             Width of the kernel.
 
-        margin : int, optional
+        searchMargin : int, optional
             How much to slide left and right for searching.
         """
         self.window_width = window_width
         self.window_height = window_height
-        self.margin = margin
+        self.searchMargin = searchMargin
         self.windowType = windowType
+        self.verticalBias = verticalBias
 
     def getSearchBoxes(self, centers, image):
         searchBoxes = []
         for center in centers:
             searchBoxes.append((
-                int(max(center - self.margin, 0)),
-                int(min(center + self.margin, image.shape[1])),
+                int(max(center - self.searchMargin, 0)),
+                int(min(center + self.searchMargin, image.shape[1])),
             ))
         return searchBoxes
     
@@ -289,7 +295,6 @@ class ConvolutionalMarkingFinder(MarkingFinder):
 
         window_width = self.window_width
         window_height = self.window_height
-        margin = self.margin
         nlevels = int(image.shape[0] / window_height)
 
         # Refer to a common set of nonzero pixels.
@@ -353,7 +358,7 @@ class ConvolutionalMarkingFinder(MarkingFinder):
                         # Let the difference taper off as we go, to avoid colliding
                         # with the other lines.
                         # This is a sort of regularization in favor of vertical lines.
-                        d *= .75
+                        d *= self.verticalBias
                         center = lastTwoCenters[1] + d
 
                 # Save centers for the next level.
@@ -413,7 +418,6 @@ class ConvolutionalMarkingFinder(MarkingFinder):
         assert len(warped.shape) == 2, '`warped` should be single-channel'
         window_width = self.window_width
         window_height = self.window_height
-        margin = self.margin
         
         if not hasattr(self, 'window_centroids'):
             self.update(warped)
@@ -426,7 +430,7 @@ class ConvolutionalMarkingFinder(MarkingFinder):
 
         # Go through each level and draw the windows    
         for level in range(0, len(window_centroids[0])):
-            
+
             # Iterate over lane markings.
             for i in range(len(self)):
 
@@ -644,7 +648,9 @@ class LaneMarking(object):
     """Convenince class for storing polynomial fit and pixels for a lane marking."""
     # TODO: Try using a histogram of y values to classify broken and solid markings.
 
-    def __init__(self, points, order=2, xm_per_pix=3.7/491.3, ym_per_pix=30/300, radiusYeval=720, imageSize=(720, 1280), ransac=False):
+    def __init__(self, points=None, 
+        order=2, xm_per_pix=3.7/491.3, ym_per_pix=30/300, radiusYeval=720, 
+        imageSize=(720, 1280), ransac=False, smoothers=(lambda x: x, lambda x: x)):
         """
         Parameters
         ----------
@@ -654,6 +660,13 @@ class LaneMarking(object):
         order : int, optional
             Order for the fitting polynomial. Probably don't want to mess with this.
         """
+        # Default case for no-argument construction
+        if points is None:
+            self.initialized = False
+            points = [[imageSize[1]/2]*10, np.linspace(0, imageSize[0], 10)]
+        else:
+            self.initialized = True
+
         points = np.asarray(points)
         assert points.shape[0] == 2
         self.x, self.y = x, y = points
@@ -673,6 +686,7 @@ class LaneMarking(object):
         self.ym_per_pix = ym_per_pix
         self.radiusYeval = radiusYeval
         self.imageSize = imageSize
+        self.smoothers = smoothers
 
     def __call__(self, y=None):
         """Calculate y (row) as a function of x (column).
@@ -719,12 +733,20 @@ class LaneMarking(object):
             return np.inf
         return num ** (3./2) / den
 
+    def update(self, otherMarking):
+        self.fit = self.smoothers[0](otherMarking.fit)
+        self.worldFit = self.smoothers[1](otherMarking.worldFit)
+
 
 class LaneFinder(object):
     """Stateful lane-marking finder for hood camera video."""
     
     def __init__(self, 
         undistort=None,
+        threshold=Threshold(),
+        perspective=PerspectiveTransformer(),
+        markingFinder=ConvolutionalMarkingFinder(),
+        Smoother=smoothing.BoxSmoother,
         ):
 
         # SET ALL CALLABLE ATTRIBUTES.
@@ -737,13 +759,22 @@ class LaneFinder(object):
         self.undistort = undistort
 
         # Function for applying various color/Sobel thresholds.
-        self.threshold = Threshold()
+        self.threshold = threshold
         
         # Function for transforming perspective.
-        self.perspective = PerspectiveTransformer()
+        self.perspective = perspective
 
         # Function for marking discovery.
-        self.markingFinder = ConvolutionalMarkingFinder()
+        self.markingFinder = markingFinder
+
+        # Smoother for found fits.
+        self.Smoother = Smoother
+
+        # Locally stored markings for smoothing.
+        self.laneMarkings = (
+            LaneMarking(smoothers=(Smoother(), Smoother())), 
+            LaneMarking(smoothers=(Smoother(), Smoother())),
+        )
 
     def preprocess(self, frame, color=False):
         # Remove barrel distortion.
@@ -763,7 +794,9 @@ class LaneFinder(object):
         
         # Find the lane markings.
         self.markingFinder.update(frame)
-        self.laneMarkings = self.markingFinder.markings
+        newLaneMarkings = self.markingFinder.markings
+        for oldLaneMarking, newLaneMarking in zip(self.laneMarkings, newLaneMarkings):
+            oldLaneMarking.update(newLaneMarking)
 
         return self.laneMarkings
 
@@ -777,6 +810,8 @@ class LaneFinder(object):
         composite = np.copy(frame)
 
         # Draw the lane curve.
+        # Draw one line up and the other down,
+        # so the polygon between will fill correctly.
         Ys = []
         for line in left, right:
             y = np.linspace(0, 720, 256)
@@ -791,34 +826,32 @@ class LaneFinder(object):
             ])
             laneCurve = np.zeros_like(frame)
             cv2.fillConvexPoly(laneCurve, np.int32([points.T]), (232, 119, 34))
-            for (y, line) in zip(Ys, (left, right)):
-                cv2.polylines(
-                    laneCurve, np.int32([np.stack([line(y), y]).T]),
-                    isClosed=False, color=(255, 0, 0),
-                    thickness=32,
-                )
             laneCurve = self.perspective(laneCurve, inv=True)
             composite = cv2.addWeighted(composite, 1.0, laneCurve, 0.4, 0)
 
+        # Show the perspective transformation.
         if showTrapezoid:
-            cv2.polylines(
-                composite, np.int32([self.perspective.src]), 
-                isClosed=True, color=(255, 105, 180),
-                thickness=1,
-            )
+            x = self.perspective.src[:, 0]
+            y = self.perspective.src[:, 1]
+            utils.drawLine(x, y, composite, color=(255, 105, 180), isClosed=True)
 
+        # Add an inset plot showing the top-down view.
+        y = Ys[0]
         def addInset(img, r, c, f=.2):
             newsize = int(img.shape[1]*f), int(img.shape[0]*f)
             small = cv2.resize(img, newsize, interpolation=cv2.INTER_AREA)
             composite[r:r+small.shape[0], c:c+small.shape[1], :] = small
 
         inset = self.preprocess(frame, color=True)
-        for (y, line) in zip(Ys, (left, right)):
-            cv2.polylines(
-                inset, np.int32([np.stack([line(y), y]).T]),
-                isClosed=False, color=(255, 0, 0),
+        for line in (left, right):
+            utils.drawLine(
+                line(y), y, inset,
+                color=(255, 0, 0),
                 thickness=12,
             )
+        for line in self.markingFinder.failedLaneMarkings:
+            utils.drawLine(line(y), y, inset, color=(128, 128, 128), thickness=12)
+
         centroids = self.markingFinder.paint(self.preprocess(frame))
         inset = cv2.addWeighted(inset, 1.0, centroids, 0.5, 0)
 
@@ -830,9 +863,10 @@ class LaneFinder(object):
 
         y = 50
         alphaStrings = [
-            'a = [%s]' % (
+            'a(%d history) = [%s]' % (
+                len(self.laneMarkings[i].smoothers[0].history),
                 ', '.join([
-                    '%.12g' % a
+                    '%.4g' % a
                     for a in self.laneMarkings[i].worldFit
                 ])
             )
