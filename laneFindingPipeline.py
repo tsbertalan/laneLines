@@ -246,7 +246,7 @@ class MarkingFinder(object):
             print('Some lane markings failed inspection!')
             if recursionDepth > 0:
                 print('(recursion #%d)' % (recursionDepth,))
-            if recursionDepth <= maxRecursion:
+            if recursionDepth < maxRecursion:
                 self.update(image, recursionDepth=recursionDepth+1)
 
 
@@ -543,6 +543,24 @@ class MarginSearchMarkingFinder(MarkingFinder):
             for points in markingsPoints
         ]
 
+def circleKernel(ksize):
+    kernel = cv2.getGaussianKernel(ksize, 0)
+    kernel = (kernel * kernel.T > kernel.min()/3).astype('uint8')
+    return kernel
+
+def dilate(img, ksize=5, iterations=1):
+    return cv2.dilate(img, circleKernel(ksize), iterations=iterations)
+
+def morphologicalSmoothing(img, ksize=5):
+    # For binary images only.
+    # Circular kernel:
+    kernel = cv2.getGaussianKernel(ksize, 0)
+    kernel * kernel.T > kernel.min() / 3
+    # Close holes:
+    img = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel)
+    # Despeckle:
+    img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel)
+    return img
 
 class Threshold(object):
     """Apply a mixture of color or texture thresholdings to a warped image."""
@@ -566,7 +584,7 @@ class Threshold(object):
         self.dilationIterations = dilationIterations
         self.blurSize = blurSize
 
-    def dilateSobel(self, singleChannel):
+    def dilateSobel(self, singleChannel, postdilate=True):
         sx_thresh = self.sx_thresh
         dilate_kernel = self.dilate_kernel
         dilationIterations = self.dilationIterations
@@ -587,6 +605,10 @@ class Threshold(object):
         kernel[:, mid:] = 0
         dmask_pos = cv2.dilate(mask_pos, kernel, iterations=dilationIterations) > 0.
         sxbinary = (dmask_pos & dmask_neg).astype(np.uint8)
+
+        if postdilate:
+            sxbinary = dilate(sxbinary)
+
         return sxbinary
 
     def __call__(self, img, color=False):
@@ -597,29 +619,23 @@ class Threshold(object):
         color : bool, optional
             If False, all filters will be combined into one boolean (0 or 255) array.
         """
-        s_thresh = self.s_thresh
+        # Get channels.
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        b_channel = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)[:, :, 2]
 
-        img = np.copy(img)
-        img = cv2.GaussianBlur(img, self.blurSize, 0)
+        # Erode a mask on light areas. This provides a mask
+        # to exclude edges due to shadow.
+        shadowMask = cv2.erode((gray > 16).astype('uint8'), circleKernel(10), iterations=15)
 
-        # Convert to HLS color space and separate the V channel
-        hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS).astype(np.float)
-        l_channel = hls[:,:,1]
-        s_channel = hls[:,:,2]
+        grayFeatures = morphologicalSmoothing(shadowMask & self.dilateSobel(gray))
+        bFeatures = self.dilateSobel(b_channel)
 
-        # Sobel x, with up/down dilation trick.
-        sxbinary = self.dilateSobel(l_channel)
-        
-        # Threshold color channel
-        s_binary = np.zeros_like(s_channel)
-        s_binary[(s_channel >= s_thresh[0]) & (s_channel <= s_thresh[1])] = 1
-        # Stack each channel
+        # Compile the features into an output image.
         color_binary = np.dstack((
-            np.zeros_like(sxbinary), # R
-            sxbinary,                # G
-            s_binary,                # B
+            np.zeros_like(grayFeatures), # R
+            grayFeatures,                # G
+            bFeatures,                   # B
         )) * 255
-
         if color:
             return color_binary.astype('uint8')
         else:
@@ -880,12 +896,11 @@ class LaneFinder(object):
         texts = []
         for i in range(2):
             n = ('left', 'right')[i]
-            text.append('%s radius: %.5g [m]' % (n, self.laneMarkings[i]))
-            text.append(alphaStrings[0])
+            texts.append('%s radius: %.5g [m]' % (n, self.laneMarkings[i].radius))
+            texts.append(alphaStrings[0])
             if isinstance(self.laneMarkings[0].smoothers[0], smoothing.WeightedSmoother):
-                text.append('last weight %s' % self.laneMarkings[0].smoothers[0].window[-1])
-            text.append('right radius: %.5g [m]' % right.radius)
-        text.append('offset from centerline: %.3g [m]' % self.metersRightOfCenter(left, right))
+                texts.append('last weight %s' % self.laneMarkings[0].smoothers[0].window[-1])
+        texts.append('offset from centerline: %.3g [m]' % self.metersRightOfCenter(left, right))
         for text in texts:
             cv2.putText(
                 composite, 
