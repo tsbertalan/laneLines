@@ -253,7 +253,7 @@ class MarkingFinder(object):
 class ConvolutionalMarkingFinder(MarkingFinder):
     """Search for lane markings with a convolution."""
     
-    def __init__(self, window_width=50, window_height=40, searchMargin=100, windowType='gaussian', verticalBias=0.5):
+    def __init__(self, window_width=50, window_height=40, searchMargin=(75, 150), windowType='gaussian', verticalBias=0.5):
         """
         Parameters
         ----------
@@ -272,12 +272,16 @@ class ConvolutionalMarkingFinder(MarkingFinder):
         self.windowType = windowType
         self.verticalBias = verticalBias
 
-    def getSearchBoxes(self, centers, image):
+    def getSearchBoxes(self, centers, image, level, nlevels):
         searchBoxes = []
+        searchMargin = self.searchMargin
+        if hasattr(searchMargin, '__getitem__'):
+            searchMargin = np.linspace(searchMargin[0], searchMargin[1], nlevels)[level]
+
         for center in centers:
             searchBoxes.append((
-                int(max(center - self.searchMargin, 0)),
-                int(min(center + self.searchMargin, image.shape[1])),
+                int(max(center - searchMargin, 0)),
+                int(min(center + searchMargin, image.shape[1])),
             ))
         return searchBoxes
     
@@ -335,7 +339,7 @@ class ConvolutionalMarkingFinder(MarkingFinder):
             conv_signal = np.convolve(window, image_layer, mode='same')
 
             # Find the best left centroid by using past center as a reference.
-            searchBoxes = self.getSearchBoxes(centers, image)
+            searchBoxes = self.getSearchBoxes(centers, image, level, nlevels)
 
             # Find the best centroids by using past centers as references.
             # TODO: If the bracketed portion is all-zero, consider that maybe this method has failed.
@@ -429,7 +433,8 @@ class ConvolutionalMarkingFinder(MarkingFinder):
         points = np.zeros_like(warped)
 
         # Go through each level and draw the windows    
-        for level in range(0, len(window_centroids[0])):
+        nlevels = int(warped.shape[0] / window_height)
+        for level in range(0, nlevels):
 
             # Iterate over lane markings.
             for i in range(len(self)):
@@ -440,7 +445,7 @@ class ConvolutionalMarkingFinder(MarkingFinder):
                 # Do some drawing.
                 if level > 0:
                     centers = [xx[level] for xx in window_centroids]
-                    bounds = self.getSearchBoxes(centers, warped)
+                    bounds = self.getSearchBoxes(centers, warped, level, nlevels)
 
                     # Draw search box.
                     href = warped.shape[0]
@@ -449,13 +454,6 @@ class ConvolutionalMarkingFinder(MarkingFinder):
                         [href-level*window_height, href-level*window_height, href-(level+1)*window_height, href-(level+1)*window_height]
                     ]).T])
                     cv2.polylines(output, perimeter, isClosed=True, color=(255, 0, 0), thickness=4)
-
-                    # Draw centroid as line.
-                    perimeter = np.int32([np.stack([
-                        [window_centroids[i][level]]*2,
-                        [href-level*window_height, href-(level+1)*window_height,]
-                    ]).T])
-                    cv2.polylines(output, perimeter, isClosed=False, color=(0, 0, 255), thickness=2)
 
                 # Add graphic points from window mask here to total pixels found 
                 points[mask == 1] = 255
