@@ -15,9 +15,10 @@ class WindowSmoother(Smoother):
     def __call__(self, x):
         self.history.append(x)
         l = len(self.history)
-        normalizer = sum(self.window[-l:])
+        indices = range(0, -l, -1)
+        normalizer = sum([self.window[i] for i in indices])
         return sum([
-            self.window[-i] * self.history[-i] for i in range(l)[::-1]
+            self.window[i] * self.history[i] for i in indices
         ]) / normalizer
 
 class BoxSmoother(WindowSmoother):
@@ -25,3 +26,13 @@ class BoxSmoother(WindowSmoother):
     def __init__(self, historySize=10):
         WindowSmoother.__init__(self, historySize=historySize)
         self.window = np.ones((historySize,))
+
+class WeightedSmoother(WindowSmoother):
+
+    def __init__(self, historySize=10):
+        WindowSmoother.__init__(self, historySize=historySize)
+        self.window = deque(maxlen=historySize)
+
+    def __call__(self, x, weight=1):
+        self.window.append(weight)
+        return WindowSmoother.__call__(self, x)

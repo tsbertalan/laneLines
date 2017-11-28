@@ -734,8 +734,11 @@ class LaneMarking(object):
         return num ** (3./2) / den
 
     def update(self, otherMarking):
-        self.fit = self.smoothers[0](otherMarking.fit)
-        self.worldFit = self.smoothers[1](otherMarking.worldFit)
+        if isinstance(self.smoothers[0], smoothing.WeightedSmoother):
+            weight = {'weight': float(len(otherMarking.x))}
+        else: weight = {}
+        self.fit = self.smoothers[0](otherMarking.fit, **weight)
+        self.worldFit = self.smoothers[1](otherMarking.worldFit, **weight)
 
 
 class LaneFinder(object):
@@ -746,7 +749,7 @@ class LaneFinder(object):
         threshold=Threshold(),
         perspective=PerspectiveTransformer(),
         markingFinder=ConvolutionalMarkingFinder(),
-        Smoother=smoothing.BoxSmoother,
+        Smoother=smoothing.WeightedSmoother,
         ):
 
         # SET ALL CALLABLE ATTRIBUTES.
@@ -805,7 +808,8 @@ class LaneFinder(object):
         return (imgWidth / 2. - centerline) * left.xm_per_pix
 
     def draw(self, frame, showTrapezoid=True, showThresholds=True, insetThresholds=True, showLane=True):
-        left, right = self(frame)
+        self(frame)
+        left, right = self.laneMarkings
         
         composite = np.copy(frame)
 
@@ -861,6 +865,7 @@ class LaneFinder(object):
         if showThresholds:
             composite = cv2.addWeighted(composite, 1.0, self.perspective(inset, inv=True), 0.8, 0)
 
+        # Add a text overlay.
         y = 50
         alphaStrings = [
             'a(%d history) = [%s]' % (
@@ -872,14 +877,16 @@ class LaneFinder(object):
             )
             for i in range(len(self.laneMarkings))
         ]
-        for text in [
-            'left radius: %.5g [m]' % left.radius,
-            alphaStrings[0],
-            'right radius: %.5g [m]' % right.radius,
-            alphaStrings[1],
-            'offset from centerline: %.3g [m]' % self.metersRightOfCenter(left, right),
-
-        ]:
+        texts = []
+        for i in range(2):
+            n = ('left', 'right')[i]
+            text.append('%s radius: %.5g [m]' % (n, self.laneMarkings[i]))
+            text.append(alphaStrings[0])
+            if isinstance(self.laneMarkings[0].smoothers[0], smoothing.WeightedSmoother):
+                text.append('last weight %s' % self.laneMarkings[0].smoothers[0].window[-1])
+            text.append('right radius: %.5g [m]' % right.radius)
+        text.append('offset from centerline: %.3g [m]' % self.metersRightOfCenter(left, right))
+        for text in texts:
             cv2.putText(
                 composite, 
                 text,
