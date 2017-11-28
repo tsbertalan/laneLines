@@ -762,7 +762,7 @@ class LaneFinder(object):
         threshold=Threshold(),
         perspective=PerspectiveTransformer(),
         markingFinder=ConvolutionalMarkingFinder(),
-        Smoother=smoothing.WeightedSmoother,
+        Smoother=smoothing.BoxSmoother,
         ):
 
         # SET ALL CALLABLE ATTRIBUTES.
