@@ -77,7 +77,7 @@ class Undistorter(object):
 class PerspectiveTransformer(object):
     """Warp a trapezoid to fill a rectangle."""
     
-    def __init__(self, shape=(1280, 720), horizonRadius=.1, horizonLevel=.65, hoodPixels=60, d=200):
+    def __init__(self, shape=(1280, 720), horizonRadius=.1, horizonLevel=.65, hoodPixels=30, d=200):
         """
         Parameters
         ----------
@@ -237,7 +237,7 @@ class MarkingFinder(object):
         # Report to the caller whether all laneMarkings passed inspection.
         return np.all(acceptables)
 
-    def postUpdateQualityCheck(self, image, recursionDepth, maxRecursion=2):
+    def postUpdateQualityCheck(self, image, recursionDepth, maxRecursion=1):
         # Check some quality metrics on the found lines.
         # If they're found lacking, the checker will replace them
         # with the default guesses. We can then try the update again.
@@ -253,7 +253,7 @@ class MarkingFinder(object):
 class ConvolutionalMarkingFinder(MarkingFinder):
     """Search for lane markings with a convolution."""
     
-    def __init__(self, window_width=50, window_height=40, searchMargin=60, windowType='gaussian', verticalBias=0.5):
+    def __init__(self, window_width=50, window_height=40, searchMargin=100, windowType='gaussian', verticalBias=0.5):
         """
         Parameters
         ----------
@@ -551,7 +551,7 @@ def circleKernel(ksize):
 def dilate(img, ksize=5, iterations=1):
     return cv2.dilate(img, circleKernel(ksize), iterations=iterations)
 
-def morphologicalSmoothing(img, ksize=5):
+def morphologicalSmoothing(img, ksize=20):
     # For binary images only.
     # Circular kernel:
     kernel = cv2.getGaussianKernel(ksize, 0)
@@ -565,7 +565,7 @@ def morphologicalSmoothing(img, ksize=5):
 class Threshold(object):
     """Apply a mixture of color or texture thresholdings to a warped image."""
 
-    def __init__(self, s_thresh=(170, 255), sx_thresh=20, dilate_kernel=(2, 6), dilationIterations=3, blurSize=(5,5)):
+    def __init__(self, s_thresh=(170, 255), sx_thresh=20, dilate_kernel=(2, 4), dilationIterations=3, blurSize=(5,5)):
         """
         Parameters
         ----------
@@ -641,11 +641,7 @@ class Threshold(object):
         else:
             cb = color_binary
             # TODO: Why is this still an 8-bit array? Would numpy pack it better if it was truly boolean?
-            return np.logical_or(
-                np.logical_or(
-                    cb[:, :, 0], cb[:, :, 1]),
-                cb[:, :, 2]
-            ).astype('uint8') * 255
+            return cb.sum(axis=-1).astype('uint8') * 255
 
 
 def regressPoly(x, y, order, ransac=False):
@@ -654,7 +650,7 @@ def regressPoly(x, y, order, ransac=False):
     if not ransac:
         return np.polyfit(x, y , order)
     else:
-        estimator = RANSACRegressor(random_state=42)
+        estimator = RANSACRegressor(random_state=42, min_samples=.8, max_trials=300)
         model = make_pipeline(PolynomialFeatures(order), estimator)
         model.fit(x.reshape(x.size, 1), y)
         return model._final_estimator.estimator_.coef_[::-1]
@@ -750,12 +746,13 @@ class LaneMarking(object):
         return num ** (3./2) / den
 
     def update(self, otherMarking):
+        weight = {}
         if isinstance(self.smoothers[0], smoothing.WeightedSmoother):
             weight = {'weight': float(len(otherMarking.x))}
-        else: weight = {}
         self.fit = self.smoothers[0](otherMarking.fit, **weight)
         self.worldFit = self.smoothers[1](otherMarking.worldFit, **weight)
 
+carDecal = cv2.imread('carOverlay.png')
 
 class LaneFinder(object):
     """Stateful lane-marking finder for hood camera video."""
@@ -795,12 +792,15 @@ class LaneFinder(object):
             LaneMarking(smoothers=(Smoother(), Smoother())),
         )
 
-    def preprocess(self, frame, color=False):
+    def preprocess(self, frame, color=False, blurksize=5):
         # Remove barrel distortion.
         frame = self.undistort(frame)
         
         # Perspective-transform to a bird's-eye view.
         frame = self.perspective(frame)
+
+        # Apply some blurring to remove e.g. window reflection.
+        frame = cv2.GaussianBlur(frame, (blurksize, blurksize), 0)
         
         # Do a mixture of color/Sobel thresholdings.
         frame = self.threshold(frame, color=color)
@@ -823,7 +823,7 @@ class LaneFinder(object):
         centerline = np.mean([left(yeval), right(yeval)])
         return (imgWidth / 2. - centerline) * left.xm_per_pix
 
-    def draw(self, frame, showTrapezoid=True, showThresholds=True, insetThresholds=True, showLane=True):
+    def draw(self, frame, showTrapezoid=True, showThresholds=True, insetBEV=True, showLane=True, showCurves=True, showCentroids=True):
         self(frame)
         left, right = self.laneMarkings
         
@@ -839,6 +839,14 @@ class LaneFinder(object):
                 y = y[::-1]
             Ys.append(y)
 
+        # Add an inset plot showing the top-down view.
+        def addInset(img, r, c, f=.2):
+            newsize = int(img.shape[1]*f), int(img.shape[0]*f)
+            small = cv2.resize(img, newsize, interpolation=cv2.INTER_AREA)
+            composite[r:r+small.shape[0], c:c+small.shape[1], :] = small
+        inset = np.zeros_like(frame)
+
+        # Add various things to the inset.
         if showLane:
             points = np.hstack([
                 np.stack([line(y), y])
@@ -846,40 +854,37 @@ class LaneFinder(object):
             ])
             laneCurve = np.zeros_like(frame)
             cv2.fillConvexPoly(laneCurve, np.int32([points.T]), (232, 119, 34))
-            laneCurve = self.perspective(laneCurve, inv=True)
-            composite = cv2.addWeighted(composite, 1.0, laneCurve, 0.4, 0)
+            inset = cv2.addWeighted(inset, 1.0, laneCurve, 0.4, 0)
 
-        # Show the perspective transformation.
         if showTrapezoid:
-            x = self.perspective.src[:, 0]
-            y = self.perspective.src[:, 1]
-            utils.drawLine(x, y, composite, color=(255, 105, 180), isClosed=True)
-
-        # Add an inset plot showing the top-down view.
-        y = Ys[0]
-        def addInset(img, r, c, f=.2):
-            newsize = int(img.shape[1]*f), int(img.shape[0]*f)
-            small = cv2.resize(img, newsize, interpolation=cv2.INTER_AREA)
-            composite[r:r+small.shape[0], c:c+small.shape[1], :] = small
-
-        inset = self.preprocess(frame, color=True)
-        for line in (left, right):
-            utils.drawLine(
-                line(y), y, inset,
-                color=(255, 0, 0),
-                thickness=12,
-            )
-        for line in self.markingFinder.failedLaneMarkings:
-            utils.drawLine(line(y), y, inset, color=(128, 128, 128), thickness=12)
-
-        centroids = self.markingFinder.paint(self.preprocess(frame))
-        inset = cv2.addWeighted(inset, 1.0, centroids, 0.5, 0)
-
-        if insetThresholds:
-            addInset(inset, 100, 1000)
+            x = self.perspective.dst[:, 0]
+            y = self.perspective.dst[:, 1]
+            utils.drawLine(x, y, inset, color=(255, 105, 180), isClosed=True)
 
         if showThresholds:
-            composite = cv2.addWeighted(composite, 1.0, self.perspective(inset, inv=True), 0.8, 0)
+            inset = cv2.addWeighted(inset, 1.0, self.preprocess(frame, color=True), 1.0, 0)
+
+        if showCurves:
+            y = Ys[0]
+            for line in (left, right):
+                utils.drawLine(
+                    line(y), y, inset,
+                    color=(255, 0, 0),
+                    thickness=12,
+                )
+            for line in self.markingFinder.failedLaneMarkings:
+                utils.drawLine(line(y), y, inset, color=(128, 128, 128), thickness=12)
+
+        if showCentroids:
+            centroids = self.markingFinder.paint(self.preprocess(frame))
+            inset = cv2.addWeighted(inset, 1.0, centroids, 0.5, 0)
+
+        # Warp the inset down onto the main view.
+        composite = cv2.addWeighted(composite, 1.0, self.perspective(inset, inv=True), 0.8, 0)
+
+        if insetBEV:
+            inset = cv2.addWeighted(carDecal, 1.0, inset, 1.0, 0)
+            addInset(inset, 100, 1000)
 
         # Add a text overlay.
         y = 50
@@ -899,7 +904,7 @@ class LaneFinder(object):
             texts.append('%s radius: %.5g [m]' % (n, self.laneMarkings[i].radius))
             texts.append(alphaStrings[0])
             if isinstance(self.laneMarkings[0].smoothers[0], smoothing.WeightedSmoother):
-                texts.append('last weight %s' % self.laneMarkings[0].smoothers[0].window[-1])
+                texts.append('last window weight %s' % self.laneMarkings[i].smoothers[0].window[-1])
         texts.append('offset from centerline: %.3g [m]' % self.metersRightOfCenter(left, right))
         for text in texts:
             cv2.putText(
