@@ -189,6 +189,7 @@ class MarkingFinder(object):
     def update(self, image):
         raise NotImplementedError
 
+
 class ConvolutionalMarkingFinder(MarkingFinder):
     """Search for lane markings with a convolution."""
     
@@ -286,9 +287,19 @@ class ConvolutionalMarkingFinder(MarkingFinder):
                     # make that the new center.
                     center = np.argmax(bracketed) + lo
                 else:
-                    # Otherwise, keep the old center (rather than using
-                    # the left border, as np.argmax would have naively done).
-                    center = centers[i]
+                    if level == 1:
+                        # If this is just the second level, do nothing.
+                        center = centers[i]
+                    else:
+                        # Otherwise, do some simple linear projection.
+                        lastTwoCenters = window_centroids[i][level-2:level]
+                        d = lastTwoCenters[1] - lastTwoCenters[0]
+                        # If we keep finding nothing with each new level,
+                        # Let the difference taper off as we go, to avoid colliding
+                        # with the other lines.
+                        # This is a sort of regularization in favor of vertical lines.
+                        d *= .75
+                        center = lastTwoCenters[1] + d
 
                 # Save centers for the next level.
                 centers[i] = center
