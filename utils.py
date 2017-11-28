@@ -68,6 +68,11 @@ def isInteractive():
     import __main__ as main
     return not hasattr(main, '__file__')
 
+def bk():
+    """Set a breakpoint; for use in Jupyter."""
+    from IPython.core.debugger import set_trace
+    set_trace()
+
 def drawLine(x, y, canvas, **kwargs):
     kwargs.setdefault('isClosed', False)
     x = np.asarray(x).ravel()

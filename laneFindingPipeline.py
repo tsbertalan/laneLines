@@ -77,7 +77,7 @@ class Undistorter(object):
 class PerspectiveTransformer(object):
     """Warp a trapezoid to fill a rectangle."""
     
-    def __init__(self, shape=(1280, 720), horizonRadius=.1, horizonLevel=.65, hoodPixels=30, d=200):
+    def __init__(self, shape=(1280, 720), horizonRadius=.1, horizonLevel=.65, hoodPixels=30, d=150):
         """
         Parameters
         ----------
@@ -122,6 +122,19 @@ class PerspectiveTransformer(object):
 
         self.M = cv2.getPerspectiveTransform(src, dst)
         self.Minv = cv2.getPerspectiveTransform(dst, src)
+
+    def callOnPoints(self, x, y, inv=False):
+        if inv: M = self.Minv
+        else: M = self.M
+        return (
+            (M[0, 0] * x + M[0, 1] * y + M[0, 2])
+            /
+            (M[2, 0] * x + M[2, 1] * y + M[2, 2])
+            ,
+            (M[1, 0] * x + M[1, 1] * y + M[1, 2])
+            /
+            (M[2, 0] * x + M[2, 1] * y + M[2, 2])
+        )
         
     def __call__(self, img, inv=False, img_size=None):
         if img_size is None:
@@ -176,7 +189,7 @@ class MarkingFinder(object):
 
     # Doing this for multiple laneMarkings in each MarkingFinder
     # allows us to do some work (like convolutions) only once per frame.
-    hintsx = (1280./4, 1280./4*3)
+    hintsx = (1280. * .25 , 1280. * .75)
 
     def getHintedLaneMarking(self, i):
         return LaneMarking([[self.hintsx[i]]*2, [0, 720]])
@@ -253,7 +266,7 @@ class MarkingFinder(object):
 class ConvolutionalMarkingFinder(MarkingFinder):
     """Search for lane markings with a convolution."""
     
-    def __init__(self, window_width=50, window_height=40, searchMargin=(75, 150), windowType='gaussian', verticalBias=0.5):
+    def __init__(self, window_width=50, window_height=40, searchMargin=(75, 120), windowType='gaussian', gaussianRadius=1.5, verticalBias=0.25):
         """
         Parameters
         ----------
@@ -271,6 +284,7 @@ class ConvolutionalMarkingFinder(MarkingFinder):
         self.searchMargin = searchMargin
         self.windowType = windowType
         self.verticalBias = verticalBias
+        self.gaussianRadius = gaussianRadius
 
     def getSearchBoxes(self, centers, image, level, nlevels):
         searchBoxes = []
@@ -299,6 +313,7 @@ class ConvolutionalMarkingFinder(MarkingFinder):
 
         window_width = self.window_width
         window_height = self.window_height
+        gaussianRadius = self.gaussianRadius
         nlevels = int(image.shape[0] / window_height)
 
         # Refer to a common set of nonzero pixels.
@@ -315,7 +330,7 @@ class ConvolutionalMarkingFinder(MarkingFinder):
         # Create our window template that we will use for convolutions.
         if self.windowType == 'gaussian':
             # Gaussian window
-            window = np.exp(-np.linspace(-1, 1, window_width)**2)
+            window = np.exp(-np.linspace(-gaussianRadius, gaussianRadius, window_width)**2)
         else:
             # Box window.
             window = np.ones(window_width)
@@ -541,6 +556,7 @@ class MarginSearchMarkingFinder(MarkingFinder):
             for points in markingsPoints
         ]
 
+
 def circleKernel(ksize):
     kernel = cv2.getGaussianKernel(ksize, 0)
     kernel = (kernel * kernel.T > kernel.min()/3).astype('uint8')
@@ -582,10 +598,13 @@ class Threshold(object):
         self.dilationIterations = dilationIterations
         self.blurSize = blurSize
 
-    def dilateSobel(self, singleChannel, postdilate=True):
+    def dilateSobel(self, singleChannel, postdilate=True, preblurksize=13):
         sx_thresh = self.sx_thresh
         dilate_kernel = self.dilate_kernel
         dilationIterations = self.dilationIterations
+
+        # Add a little *more* blurring.
+        singleChannel = cv2.GaussianBlur(singleChannel, (preblurksize, preblurksize), 0)
 
         sobelx = cv2.Sobel(singleChannel, cv2.CV_64F, 1, 0) # Take the derivative in x
 
@@ -659,7 +678,7 @@ class LaneMarking(object):
     # TODO: Try using a histogram of y values to classify broken and solid markings.
 
     def __init__(self, points=None, 
-        order=2, xm_per_pix=3.7/491.3, ym_per_pix=30/300, radiusYeval=720, 
+        order=2, xm_per_pix=3.6576/628.33, ym_per_pix=18.288/602, radiusYeval=720,
         imageSize=(720, 1280), ransac=False, smoothers=(lambda x: x, lambda x: x)):
         """
         Parameters
@@ -698,7 +717,7 @@ class LaneMarking(object):
         self.imageSize = imageSize
         self.smoothers = smoothers
 
-    def __call__(self, y=None):
+    def __call__(self, y=None, worldCoordinates=False):
         """Calculate y (row) as a function of x (column).
 
         Parameters
@@ -713,9 +732,13 @@ class LaneMarking(object):
         # than a dict-backed memoized version.
         # This might be different with thicker lane markings
         # (more y values to map to the same x).
-        return np.polyval(self.fit, y)
+        if worldCoordinates:
+            fit = self.worldFit
+        else:
+            fit = self.fit
+        return np.polyval(fit, y)
 
-    def show(self, ax, plotKwargs=dict(color='magenta', linewidth=4), **scatterKwargs):
+    def show(self, ax, plotKwargs=dict(color='magenta', linewidth=4, alpha=.5), **scatterKwargs):
         """Visualize."""
         scatterKwargs.setdefault('s', 100)
         scatterKwargs.setdefault('alpha', .02)
@@ -750,7 +773,6 @@ class LaneMarking(object):
         self.fit = self.smoothers[0](otherMarking.fit, **weight)
         self.worldFit = self.smoothers[1](otherMarking.worldFit, **weight)
 
-carDecal = cv2.imread('carOverlay.png')
 
 class LaneFinder(object):
     """Stateful lane-marking finder for hood camera video."""
@@ -881,7 +903,9 @@ class LaneFinder(object):
         composite = cv2.addWeighted(composite, 1.0, self.perspective(inset, inv=True), 0.8, 0)
 
         if insetBEV:
-            inset = cv2.addWeighted(carDecal, 1.0, inset, 1.0, 0)
+            if not hasattr(self, 'carDecal'):
+                self.carDecal = cv2.imread('carOverlay.png')
+            inset = cv2.addWeighted(self.carDecal, 1.0, inset, 1.0, 0)
             addInset(inset, 100, 1000)
 
         # Add a text overlay.
