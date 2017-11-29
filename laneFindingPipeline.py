@@ -661,16 +661,25 @@ class Threshold(object):
             return cb.sum(axis=-1).astype('uint8') * 255
 
 
-def regressPoly(x, y, order, ransac=False):
+def regressPoly(x, y, order, ransac=False, lamb=0.5):
     # scikit-learn.org/stable/auto_examples/linear_model/plot_robust_fit.html#sphx-glr-auto-examples-linear-model-plot-robust-fit-py
     # scikit-learn.org/stable/modules/generated/sklearn.linear_model.RANSACRegressor.html
-    if not ransac:
-        return np.polyfit(x, y , order)
+    if lamb == 0:
+        if not ransac:
+            return np.polyfit(x, y , order)
+        else:
+            estimator = RANSACRegressor(random_state=42, min_samples=.8, max_trials=300)
+            model = make_pipeline(PolynomialFeatures(order), estimator)
+            model.fit(x.reshape(x.size, 1), y)
+            return model._final_estimator.estimator_.coef_[::-1]
     else:
-        estimator = RANSACRegressor(random_state=42, min_samples=.8, max_trials=300)
-        model = make_pipeline(PolynomialFeatures(order), estimator)
-        model.fit(x.reshape(x.size, 1), y)
-        return model._final_estimator.estimator_.coef_[::-1]
+        A = np.stack([np.asarray(x).ravel()**k for k in range(order+1)[::-1]]).T
+        n_col = A.shape[1]
+        fit, residuals, rank, s = np.linalg.lstsq(
+            A.T.dot(A) + lamb * np.identity(n_col), 
+            A.T.dot(y)
+        )
+        return fit
 
 
 class LaneMarking(object):
@@ -679,7 +688,7 @@ class LaneMarking(object):
 
     def __init__(self, points=None, 
         order=2, xm_per_pix=3.6576/628.33, ym_per_pix=18.288/602, radiusYeval=720,
-        imageSize=(720, 1280), ransac=False, smoothers=(lambda x: x, lambda x: x)):
+        imageSize=(720, 1280), ransac=False, lamb=.5, smoothers=(lambda x: x, lambda x: x)):
         """
         Parameters
         ----------
@@ -708,8 +717,8 @@ class LaneMarking(object):
             self.worldFit = np.zeros((order+1,))
             self.worldFit[-1] = x[0] * xm_per_pix
         else:
-            self.fit = regressPoly(y, x, order, ransac=ransac)
-            self.worldFit = regressPoly(y * ym_per_pix, x * xm_per_pix, order, ransac=ransac)
+            self.fit = regressPoly(y, x, order, ransac=ransac, lamb=lamb)
+            self.worldFit = regressPoly(y * ym_per_pix, x * xm_per_pix, order, ransac=ransac, lamb=lamb)
         self.order = order
         self.xm_per_pix = xm_per_pix
         self.ym_per_pix = ym_per_pix
