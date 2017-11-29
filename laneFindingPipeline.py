@@ -562,9 +562,6 @@ def circleKernel(ksize):
     kernel = (kernel * kernel.T > kernel.min()/3).astype('uint8')
     return kernel
 
-def dilate(img, ksize=5, iterations=1):
-    return cv2.dilate(img, circleKernel(ksize), iterations=iterations)
-
 def morphologicalSmoothing(img, ksize=20):
     # For binary images only.
     # Circular kernel:
@@ -576,10 +573,13 @@ def morphologicalSmoothing(img, ksize=20):
     img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel)
     return img
 
-class Threshold(object):
+class ColorFilter(object):
     """Apply a mixture of color or texture thresholdings to a warped image."""
-
-    def __init__(self, s_thresh=(170, 255), sx_thresh=20, dilate_kernel=(2, 4), dilationIterations=3, blurSize=(5,5)):
+ 
+    def __init__(self, 
+        s_thresh=(170, 255), l_thresh=(200, 255), sx_thresh=20, 
+        dilate_kernel=(2, 4), dilationIterations=3, blurSize=(5,5)
+        ):
         """
         Parameters
         ----------
@@ -593,6 +593,7 @@ class Threshold(object):
 
         """
         self.s_thresh = s_thresh
+        self.l_thresh = l_thresh
         self.sx_thresh = sx_thresh
         self.dilate_kernel = dilate_kernel
         self.dilationIterations = dilationIterations
@@ -624,7 +625,7 @@ class Threshold(object):
         sxbinary = (dmask_pos & dmask_neg).astype(np.uint8)
 
         if postdilate:
-            sxbinary = dilate(sxbinary)
+            sxbinary = cv2.dilate(sxbinary, circleKernel(5), iterations=1)
 
         return sxbinary
 
@@ -638,20 +639,37 @@ class Threshold(object):
         """
         # Get channels.
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-        b_channel = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)[:, :, 2]
+        hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
+        l_channel = hls[:, :, 1]
+        s_channel = hls[:, :, 2]
+        s_eq_channel = cv2.equalizeHist(s_channel)
 
         # Erode a mask on light areas. This provides a mask
         # to exclude edges due to shadow.
         shadowMask = cv2.erode((gray > 16).astype('uint8'), circleKernel(10), iterations=15)
 
-        grayFeatures = morphologicalSmoothing(shadowMask & self.dilateSobel(gray))
-        bFeatures = self.dilateSobel(b_channel)
+        # Look for colorful lines.
+        s_thresh = self.s_thresh
+        s_binary = s_channel > s_thresh[0]
+        if s_thresh[1] < 255:
+            s_binary = s_binary & (s_channel < s_thresh[1])
+        s_binary = s_binary & shadowMask
+
+        # Look for less-colorful lines, but only the vertical correct-width ones.
+        #s_eq_binary = 
+
+        # Look for bright lines
+        l_thresh = self.l_thresh
+        l_binary = l_channel > l_thresh[0]
+        if l_thresh[1] < 255:
+            l_binary = l_binary & (l_channel < l_thresh[1])
+        l_binary = l_binary & shadowMask
 
         # Compile the features into an output image.
         color_binary = np.dstack((
-            np.zeros_like(grayFeatures), # R
-            grayFeatures,                # G
-            bFeatures,                   # B
+            np.zeros_like(s_binary), # R
+            l_binary,                # G
+            s_binary,                # B
         )) * 255
         if color:
             return color_binary.astype('uint8')
@@ -788,7 +806,7 @@ class LaneFinder(object):
     
     def __init__(self, 
         undistort=None,
-        threshold=Threshold(),
+        colorFilter=ColorFilter(),
         perspective=PerspectiveTransformer(),
         markingFinder=ConvolutionalMarkingFinder(),
         Smoother=smoothing.BoxSmoother,
@@ -804,7 +822,7 @@ class LaneFinder(object):
         self.undistort = undistort
 
         # Function for applying various color/Sobel thresholds.
-        self.threshold = threshold
+        self.colorFilter = colorFilter
         
         # Function for transforming perspective.
         self.perspective = perspective
@@ -832,28 +850,34 @@ class LaneFinder(object):
         frame = cv2.GaussianBlur(frame, (blurksize, blurksize), 0)
         
         # Do a mixture of color/Sobel thresholdings.
-        frame = self.threshold(frame, color=color)
+        frame = self.colorFilter(frame, color=color)
 
         return frame
-     
-    def __call__(self, frame):
-        # Do our preprocessing.
-        frame = self.preprocess(frame)
-        
-        # Find the lane markings.
-        self.markingFinder.update(frame)
+
+    def update(self, preprocessed):
+        self.markingFinder.update(preprocessed)
         newLaneMarkings = self.markingFinder.markings
         for oldLaneMarking, newLaneMarking in zip(self.laneMarkings, newLaneMarkings):
             oldLaneMarking.update(newLaneMarking)
+        return self.laneMarkings
+     
+    def __call__(self, frame):
+        # Do our preprocessing.
+        preprocessed = self.preprocess(frame)
+        
+        # Find the lane markings.
+        self.update(preprocessed)
 
+        # Return the smoothed lane markings.
         return self.laneMarkings
 
     def metersRightOfCenter(self, left, right, yeval=720, imgWidth=1280):
         centerline = np.mean([left(yeval), right(yeval)])
         return (imgWidth / 2. - centerline) * left.xm_per_pix
 
-    def draw(self, frame, showTrapezoid=True, showThresholds=True, insetBEV=True, showLane=True, showCurves=True, showCentroids=True):
-        self(frame)
+    def draw(self, frame, call=True, showTrapezoid=True, showThresholds=True, insetBEV=True, showLane=True, showCurves=True, showCentroids=True):
+        if call:
+            self(frame)
         left, right = self.laneMarkings
         
         composite = np.copy(frame)
@@ -967,9 +991,9 @@ class LaneFinder(object):
 
         # Show the preprocessed image on the bottom.
         perspectived = self.perspective(self.undistort(frame))
-        preprocessed = self.threshold(perspectived, color=True)
+        preprocessed = self.colorFilter(perspectived, color=True)
         if isinstance(self.markingFinder, ConvolutionalMarkingFinder):
-            warped = self.threshold(perspectived)
+            warped = self.colorFilter(perspectived)
             preprocessed = cv2.addWeighted(preprocessed, 1.0, self.markingFinder.paint(warped), 0.5, 0)
         ax.imshow(preprocessed)
 
