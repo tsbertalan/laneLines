@@ -39,13 +39,17 @@ class Undistorter(object):
         if ret:
             self.imgp.append(corners)
             
-    def fit(self, imgs):
+    def fit(self, imgs=None):
         """
         Parameters
         ----------
         imgs : iterable of str or ndarray
             Either paths to image files or the images loaded with cv2.imread
         """
+        if imgs is None:
+            from glob import glob
+            imgs = glob('camera_cal/*.jpg')
+
         if isInteractive: bar = tqdm.tqdm_notebook
         else: bar = tqdm.tqdm
         for img in bar(imgs, unit='frame', desc='cal. undistort'):
