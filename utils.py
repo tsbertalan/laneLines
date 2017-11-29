@@ -23,8 +23,10 @@ def showVid(fpath):
 
 def saveVideo(frames, fpath, **tqdmKw):
     """Save a collection of images to a video file. I've tried .mp4 extensions."""
+    tqdmKw.setdefault('desc', os.path.basename(fpath))
+    tqdmKw.setdefault('unit', 'frame')
     writer = skvideo.io.FFmpegWriter(fpath)
-    for frame in tqdm.tqdm_notebook(frames, desc='video: %s' % os.path.basename(fpath), unit='frame', **tqdmKw):
+    for frame in tqdm.tqdm_notebook(frames, **tqdmKw):
         writer.writeFrame(frame)
     writer.close()
     return showVid(fpath)
