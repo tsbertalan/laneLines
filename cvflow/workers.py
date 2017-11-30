@@ -160,12 +160,12 @@ class CountSeekingThreshold(Boolean):
     
     def __init__(self, parent, initialThreshold=150, goalCount=10000, countTol=200):
         super().__init__()
-        assert isinstance(parent, Mono), '%s is not explicitly single-channel.' % parent
-        self.addParent(parent)
         self.threshold = initialThreshold
         self.goalCount = goalCount
         self.countTol = countTol
         self.iterationCounts = []
+        self.checkType(parent, Mono)
+        self.addParent(parent)
         
     @cached
     def value(self):

@@ -72,8 +72,8 @@ class Op:
         else:
             for parent in self.parents:
                 target = parent
-                if target._skipForPlot:
-                    assert len(target.parents) == 1
+                while target._skipForPlot:
+                    assert len(target.parents) == 1, '%s does not have 1 parent.' % target
                     target = target.parent()
                 d.add_edge(target, self)
 
@@ -119,6 +119,13 @@ class Op:
         kwargs.setdefault('title', '%s $\leftarrow$ %s' % (self, tuple(self.parents)))
         misc.show(self.value, **kwargs)
 
+    def checkType(self, obj, acceptedType, invert=False):
+        # Wow it's almost like type-checking is a useful thing to have in a language.
+        if invert:
+            assert not isinstance(obj, acceptedType), '`%s` can\'t be %s for use in `%s`.' % (obj, acceptedType, self)
+        else:
+            assert isinstance(obj, acceptedType), '`%s` needs to be %s for use in `%s`.' % (obj, acceptedType, self)
+
 from . import baseOps
 from . import workers
 from . import compositeOps
@@ -129,7 +136,7 @@ class Pipeline(compositeOps.MultistepOp):
         super().__init__()
         if image is None:
             image = baseOps.ColorImage()
-        assert isinstance(image, baseOps.BaseImage), ''
+        self.checkType(image, baseOps.BaseImage), ''
         self.input = image
 
     @misc.cached
@@ -145,8 +152,9 @@ class ComplexPipeline(Pipeline):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        from cvflow.baseOps import Perspective, Blur, AsColor, CvtColor, EqualizeHistogram, ColorSplit
+        from cvflow.baseOps import Blur, AsColor, CvtColor, EqualizeHistogram, ColorSplit
         from cvflow.compositeOps import SobelClip
+        from cvflow.workers import Perspective
 
         perspective = Perspective(self.input)
         blurred = Blur(perspective)
@@ -181,4 +189,4 @@ class SimplePipeline(Pipeline):
         s_binary = CountSeekingThreshold(s_channel)
         markings_binary = Or(l_binary, s_binary)
         self.output = markings_binary
-        self.members = [perspective, blurred, hls, l_channel, s_channel, l_binary, s_binary, markings_binary, self]
+        self.members = [perspective, blurred, hls, l_channel, s_channel, l_binary, s_binary, markings_binary]

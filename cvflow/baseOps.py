@@ -33,9 +33,9 @@ class AsMono(Mono):
 
     def __init__(self, parent):
         super().__init__()
-        # if not hasattr(self, 'node_properties'): self.node_properties = {}
-        # self.node_properties['color']  = 'red'
+        self.checkType(parent, Color, invert=True)
         self.addParent(parent)
+        self._skipForPlot = True
 
 
 class Boolean(Mono):
@@ -85,13 +85,14 @@ class AsColor(Color):
     def __init__(self, parent):
         super().__init__()
         self.addParent(parent)
+        self._skipForPlot = True
 
 
 class ColorSplit(Mono):
 
     def __init__(self, color, index):
         super().__init__()
-        assert isinstance(color, Color)
+        self.checkType(color, Color)
         self.addParent(color)
         self.index = index
 
@@ -171,11 +172,12 @@ class CircleKernel(Mono):
 
 class Dilate(Mono):
 
-    def __init__(self, parent, kernel=5, iterations=1):
+    def __init__(self, mono, kernel=5, iterations=1):
         super().__init__()
-        assert isinstance(parent, Mono)
-        self.addParent(AsType(parent, 'uint8'))
-        self.parent()._skipForPlot = True
+        self.checkType(mono, Mono)
+        mono = AsType(mono, 'uint8')
+
+        self.addParent(mono)
         if isinstance(kernel, int):
             kernel = CircleKernel(kernel)
         self.addParent(kernel)
@@ -195,7 +197,7 @@ class Erode(Mono):
 
     def __init__(self, parent, kernel=None, iterations=1):
         super().__init__()
-        assert isinstance(parent, Mono)
+        self.checkType(parent, Mono)
         self.addParent(parent)
         if kernel is None:
             kerenel = CircleKernel(5)
@@ -213,7 +215,7 @@ class Opening(Mono):
 
     def __init__(self, parent, kernel=None, iterations=1):
         super().__init__()
-        assert isinstance(parent, Mono)
+        self.checkType(parent, Mono)
         self.addParent(parent)
         if kernel is None:
             kerenel = CircleKernel(5)
@@ -294,6 +296,7 @@ class AsType(Op, Circle):
 
     def __init__(self, parent, kind):
         super().__init__()
+        self._skipForPlot = True
         self.addParent(parent)
         self.kind = kind
 
@@ -387,9 +390,10 @@ class And(Op, Ellipse):
 
     def __init__(self, parent1, parent2):
         super().__init__()
-        p1m = isinstance(parent1, Mono)
-        p2m = isinstance(parent2, Mono)
-        assert p1m or p2m
+        Cls = Mono
+        p1m = isinstance(parent1, Cls)
+        p2m = isinstance(parent2, Cls)
+        assert p1m or p2m, 'Either `%s` or `%s` needs to be `%s`.' % (parent1, parent2, Cls)
         self.addParent(parent1)
         self.addParent(parent2)
 
@@ -400,12 +404,12 @@ class And(Op, Ellipse):
             out = p1.value & p2.value
         else:
             if isinstance(p1, Mono):
-                assert isinstance(p2, Color)
+                self.checkType(p2, Color)
                 mono = p1
                 color = p2
             else:
-                assert isinstance(p1, Color)
-                assert isinstance(p2, Mono)
+                self.checkType(p1, Color)
+                self.checkType(p2, Mono)
                 mono = p2
                 color = p1
             out = np.copy(color.value)
