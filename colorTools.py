@@ -1,6 +1,8 @@
 import numpy as np
 import cv2
-import laneFindingPipeline
+import laneFindingPipeline, utils
+
+import networkx, graphviz
 
 
 def circleKernel(ksize):
@@ -126,12 +128,13 @@ def _cached(method):
 def cached(method):
     return property(_cached(method))
 
-def addId(__str__):
-    def __newstr__(self):
-        return '%s #%s' % (__str__(self), id(self))
-    return __newstr__
-
 class Op:
+
+    def __init__(self):
+        self.node_properties = {}
+        if hasattr(self, '_defaultNodeProperties'):
+            self.node_properties = self._defaultNodeProperties()
+        self._visited = False
 
     def invalidateCache(self):
         self.__cache__ = {}
@@ -177,51 +180,110 @@ class Op:
         return self.parents[index].value
 
     def assembleGraph(self, d=None, currentRecursionDepth=0):
-        import networkx, graphviz
+        # if isinstance(self, CvtColor):
+        #     import utils; utils.bk()
+        self._visited = True
         if d is None:
-            d = networkx.DiGraph()
+            d = NodeDigraph()
+        d.add_node(self)
         for child in self.children:
-            if child not in d:
+            if not d.containsEdge(self, child):
                 d.add_edge(self, child)
+            if not child._visited:
                 child.assembleGraph(d, currentRecursionDepth+1)
+        for parent in self.parents:
+            if not d.containsEdge(parent, self):
+                d.add_edge(parent, self)
+            if not parent._visited:
+                parent.assembleGraph(d, currentRecursionDepth+1)
         return d
 
-    def draw(self, ax=None):
-        import networkx
+    def draw(self):
         d = self.assembleGraph()
-        if ax is not None:
-            import matplotlib.pyplot as plt
-            plt.sca(ax)
-            networkx.draw_networkx(d)
-            out = ax
-        else:
-            import graphviz
-            from io import StringIO
-            sio = StringIO()
-            networkx.drawing.nx_pydot.write_dot(d, sio)
-            dot = sio.getvalue()
-            gv = graphviz.Source(dot)
-            out = gv
-        return out
+        return d._gv
 
-    @addId
     def __str__(self):
         return type(self).__name__
+
+    def __repr__(self):
+        return str(self)
+
+    def showValue(self, **kwargs):
+        kwargs.setdefault('title', '%s $\leftarrow$ %s' % (self, tuple(self.parents)))
+        utils.show(self.value, **kwargs)
+
+
+
+class Smol:
+
+    node_properties = dict(shape='circle')
+
+
+class NodeDigraph:
+
+    def __init__(self):
+        self._gv = graphviz.Digraph()
+        self._nx = networkx.DiGraph()
+
+    def __contains__(self, obj):
+        return self._nid(obj) in self._nx
+
+    def containsEdge(self, obj1, obj2):
+        return (self._nid(obj1), self._nid(obj2)) in self._nx.edges
+
+    def add_node(self, obj):
+        # if isinstance(obj, Constant):
+        #     import utils; utils.bk()
+            
+        if obj in self:
+            return
+        kw = {}
+        if hasattr(obj, 'node_properties'):
+            kw.update(obj.node_properties)
+        kw['label'] = str(obj)
+        #kw.setdefault('label', str(obj))
+        nid = self._nid(obj)
+        self._gv.node(nid, **kw)
+        self._nx.add_node(nid)
+
+    def _nid(self, obj):
+        return ''.join((str(id(obj)) + str(obj)).split())
+
+    def add_edge(self, obj1, obj2):
+        for o in (obj1, obj2):
+            if o not in self:
+                self.add_node(o)
+
+        n1 = self._nid(obj1)
+        n2 = self._nid(obj2)
+        if not self.containsEdge(obj1, obj2):
+            self._gv.edge(n1, n2)
+            self._nx.add_edge(n1, n2)
 
 
 class Constant(Op):
 
+    def _defaultNodeProperties(self):
+        return dict(style='dotted')
+
     def __init__(self, theConstant):
+        super().__init__()
         self.theConstant = theConstant
 
     @property
     def value(self):
         return self.theConstant
 
+    def __str__(self):
+        out = str(self.theConstant).replace(':', '_')
+        out = out[:50]
+        return out
+
 
 class Lambda(Op):
 
     def __init__(self, f, *args):
+        super().__init__()
         for arg in args:
             self.addParent(arg)
         self.f = f
@@ -233,22 +295,47 @@ class Lambda(Op):
 
 
 class Mono(Op):
-    
-    def __init__(self, parent):
-        self.addParent(parent)
 
+    def _defaultNodeProperties(self):
+        return dict(color='grey')
+    
     @property
     def value(self):
         return self.parent()
 
+    def __str__(self):
+        return 'Mono'
 
-class Boolean(Mono):
-    pass
 
-
-class Not(Boolean):
+class AsMono(Mono):
 
     def __init__(self, parent):
+        super().__init__()
+        # if not hasattr(self, 'node_properties'): self.node_properties = {}
+        # self.node_properties['color']  = 'red'
+        self.addParent(parent)
+
+
+class Boolean(Mono):
+    
+    def _defaultNodeProperties(self):
+        return dict(color='grey', style='dashed')
+
+    def __str__(self):
+        return 'Bool'
+
+
+class AsBoolean(Boolean):
+
+    def __init__(self, parent):
+        super().__init__()
+        self.addParent(parent)
+
+
+class Not(Boolean, Smol):
+
+    def __init__(self, parent):
+        super().__init__()
         self.addParent(parent)
 
     @property
@@ -257,10 +344,10 @@ class Not(Boolean):
 
 
 class Color(Op):
-    
-    def __init__(self, parent):
-        self.addParent(parent)
 
+    def _defaultNodeProperties(self):
+        return dict(color='red')
+    
     @cached
     def value(self):
         parent = self.parents[0]
@@ -271,9 +358,17 @@ class Color(Op):
         return out
 
 
+class AsColor(Color):
+
+    def __init__(self, parent):
+        super().__init__()
+        self.addParent(parent)
+
+
 class ColorSplit(Mono):
 
     def __init__(self, color, index):
+        super().__init__()
         assert isinstance(color, Color)
         self.addParent(color)
         self.index = index
@@ -282,11 +377,17 @@ class ColorSplit(Mono):
     def value(self):
         return self.parent()[:, :, self.index]
 
+    def __str__(self):
+        return 'channel %d' % self.index
+
 
 class BaseImage(Op):
 
+    def _defaultNodeProperties(self):
+        return dict(shape='box')
+
     def __init__(self):
-        pass
+        super().__init__()
 
     @property
     def value(self):
@@ -303,16 +404,20 @@ class BaseImage(Op):
 
 
 class ColorImage(BaseImage, Color):
-    pass
+    
+    def _defaultNodeProperties(self):
+        return dict(shape='box', color='red')
 
 
 class MonoImage(BaseImage, Mono):
-    pass
+    
+    node_properties = dict(shape='box', color='grey')
 
 
 class Blur(Op):
 
     def __init__(self, parent, ksize=5):
+        super().__init__()
         self.addParent(parent)
         assert ksize % 2
         self.ksize = ksize
@@ -321,14 +426,14 @@ class Blur(Op):
     def value(self):
         return cv2.GaussianBlur(self.parent(), (self.ksize, self.ksize), 0)
 
-    @addId
     def __str__(self):
-        return 'Blur(ksize=%d)' % self.ksize
+        return 'Blur with width-%d kernel.' % self.ksize
 
 
 class CircleKernel(Mono):
 
     def __init__(self, ksize, falloff=3):
+        super().__init__()
         self.ksize = ksize
         self.falloff = falloff
 
@@ -342,6 +447,7 @@ class CircleKernel(Mono):
 class Dilate(Mono):
 
     def __init__(self, parent, kernel=5, iterations=1):
+        super().__init__()
         assert isinstance(parent, Mono)
         self.addParent(AsType(parent, 'uint8'))
         if isinstance(kernel, int):
@@ -355,10 +461,14 @@ class Dilate(Mono):
             self.parent(0), self.parent(1), iterations=self.iterations,
         )
 
+    def __str__(self):
+        return 'Dilate %d iterations.' % self.iterations
+
 
 class Erode(Mono):
 
     def __init__(self, parent, kernel=None, iterations=1):
+        super().__init__()
         assert isinstance(parent, Mono)
         self.addParent(parent)
         if kernel is None:
@@ -376,6 +486,7 @@ class Erode(Mono):
 class Opening(Mono):
 
     def __init__(self, parent, kernel=None, iterations=1):
+        super().__init__()
         assert isinstance(parent, Mono)
         self.addParent(parent)
         if kernel is None:
@@ -394,6 +505,7 @@ class Opening(Mono):
 class CountSeekingThresholdOp(Boolean):
     
     def __init__(self, parent, initialThreshold=150, goalCount=10000, countTol=200):
+        super().__init__()
         assert isinstance(parent, Mono)
         self.addParent(parent)
         self.threshold = initialThreshold
@@ -445,9 +557,10 @@ class CountSeekingThresholdOp(Boolean):
         return mask
 
 
-class And(Op):
+class And(Op, Smol):
 
     def __init__(self, parent1, parent2):
+        super().__init__()
         p1m = isinstance(parent1, Mono)
         p2m = isinstance(parent2, Mono)
         assert p1m or p2m
@@ -473,10 +586,14 @@ class And(Op):
             out[np.logical_not(mono())] = 0
         return out
 
+    def __str__(self):
+        return '&'
+
 
 class Sobel(Op):
 
     def __init__(self, channel, xy='x'):
+        super().__init__()
         self.xy = xy
         self.addParent(channel)
 
@@ -490,16 +607,28 @@ class Sobel(Op):
             xy = (0, 1)
         return cv2.Sobel(self.parent(), cv2.CV_64F, *xy)
 
+    def __str__(self):
+        return 'Sobel in %s direction.' % self.xy
+
 
 class _ElementwiseInequality(Boolean):
 
     def __init__(self, left, right, orEqualTo=False):
+        super().__init__()
         self.addParent(left)
         self.addParent(right)
         self.orEqualTo = orEqualTo
 
+    def __str__(self):
+        eq = ''
+        if self.orEqualTo:
+            eq = '='
+        return '%s %s%s %s' % (self.parents[0], self.baseSymbol, eq, self.parents[1])
+
 
 class LessThan(_ElementwiseInequality):
+
+    baseSymbol = '<'
 
     @cached
     def value(self):
@@ -512,6 +641,8 @@ class LessThan(_ElementwiseInequality):
 
 class GreaterThan(_ElementwiseInequality):
 
+    baseSymbol = '>'
+
     @cached
     def value(self):
         left, right = self.parents
@@ -521,24 +652,25 @@ class GreaterThan(_ElementwiseInequality):
             return left() > right()
 
 
-class AsType(Op):
+class AsType(Op, Smol):
 
     def __init__(self, parent, kind):
+        super().__init__()
         self.addParent(parent)
         self.kind = kind
 
     @cached
     def value(self):
         return self.parent().astype(self.kind)
-        
-    @addId
+
     def __str__(self):
-        return 'AsType(%s)' % self.kind
+        return str(self.kind)
 
 
 class ScalarMultiply(Op):
 
     def __init__(self, parent, scalar):
+        super().__init__()
         self.addParent(parent)
         self.scalar = scalar
 
@@ -550,6 +682,7 @@ class ScalarMultiply(Op):
 class DilateSobel(Boolean):
 
     def __init__(self, singleChannel, postdilate=True, preblurksize=13, sx_thresh=20, dilate_kernel=(2, 4), dilationIterations=3):
+        super().__init__()
         self.sx_thresh = sx_thresh
         self.dilate_kernel = dilate_kernel
         self.dilationIterations = dilationIterations
@@ -559,8 +692,10 @@ class DilateSobel(Boolean):
         self.sobelx = Sobel(blur, xy='x')
 
         # Sobel mask.
-        mask_neg = Boolean(AsType(LessThan(   self.sobelx, -sx_thresh), np.float32))
-        mask_pos = Boolean(AsType(GreaterThan(self.sobelx,  sx_thresh), np.float32))
+        # mask_neg = AsBoolean(AsType(LessThan(   self.sobelx, -sx_thresh), 'float32'))
+        # mask_pos = AsBoolean(AsType(GreaterThan(self.sobelx,  sx_thresh), 'float32'))
+        mask_neg = LessThan(   self.sobelx, -sx_thresh)
+        mask_pos = GreaterThan(self.sobelx,  sx_thresh)
 
         kernel_midpoint = dilate_kernel[1] // 2
 
@@ -574,7 +709,8 @@ class DilateSobel(Boolean):
         kernel[:, kernel_midpoint:] = 0
         self.dmask_pos = GreaterThan(Dilate(mask_pos, kernel, iterations=dilationIterations), 0.)
 
-        self.sxbinary = Boolean(AsType(And(self.dmask_pos, self.dmask_neg), 'uint8'))
+        # self.sxbinary = AsBoolean(AsType(And(self.dmask_pos, self.dmask_neg), 'uint8'))
+        self.sxbinary = AsBoolean(And(self.dmask_pos, self.dmask_neg))
 
         if postdilate:
             self.sxbinary = Dilate(self.sxbinary)
@@ -589,6 +725,7 @@ class DilateSobel(Boolean):
 class SobelClip(Op):
 
     def __init__(self, channel, threshold=None):
+        super().__init__()
 
         # Adaptive thresholding of color.
         if threshold is None:
@@ -621,11 +758,13 @@ for name in dir(cv2):
             if len(name) < len(pairFlags[code]):
                 pairFlags[code] = name.upper()
 
+
 class CvtColor(Op):
 
     _pairFlagsCodes = pairFlags
 
     def __init__(self, image, pairFlag):
+        super().__init__()
         self.addParent(image)
         self.pairFlag = pairFlag
 
@@ -633,14 +772,16 @@ class CvtColor(Op):
     def value(self):
         return cv2.cvtColor(self.parent(), self.pairFlag)
 
-    @addId
     def __str__(self):
-        return 'CvtColor(%s)' % self._pairFlagsCodes[self.pairFlag]
+        return 'Convert from %s to %s.' % tuple(
+            self._pairFlagsCodes[self.pairFlag].replace('COLOR_', '').split('2')
+        )
 
 
 class EqualizeHistogram(Color):
 
     def __init__(self, image):
+        super().__init__()
         self.addParent(image)
 
     @cached
@@ -654,6 +795,7 @@ class EqualizeHistogram(Color):
 class Perspective(Op):
 
     def __init__(self, camera, **kwargs):
+        super().__init__()
         self.addParent(camera)
         self.perspectiveTransformer = laneFindingPipeline.PerspectiveTransformer(**kwargs)
 
@@ -665,18 +807,19 @@ class Perspective(Op):
 class Pipeline(Op):
 
     def __init__(self, image):
+        super().__init__()
         assert isinstance(image, Op)
         self.addParent(image)
         self.perspective = Perspective(image)
         blurred = Blur(self.perspective)
-        gray = Mono(CvtColor(blurred, cv2.COLOR_RGB2GRAY))
-        hls = Color(CvtColor(blurred, cv2.COLOR_RGB2HLS))
-        eq = EqualizeHistogram(blurred)
-        self.l_channel = ColorSplit(hls, 1)
+        gray = AsMono(CvtColor(blurred, cv2.COLOR_RGB2GRAY))
+        hls = AsColor(CvtColor(blurred, cv2.COLOR_RGB2HLS))
+        #eq = EqualizeHistogram(blurred)
+        #self.l_channel = ColorSplit(hls, 1)
         self.s_channel = ColorSplit(hls, 2)
 
-        hlseq = Color(CvtColor(eq, cv2.COLOR_RGB2HLS))
-        bseq_channel = Blur(ColorSplit(hlseq, 2), 71)
+        #hlseq = Color(CvtColor(eq, cv2.COLOR_RGB2HLS))
+        #bseq_channel = Blur(ColorSplit(hlseq, 2), 71)
 
         self.clippedSobelS = SobelClip(self.s_channel)
 
