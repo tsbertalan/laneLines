@@ -1,10 +1,23 @@
+import graphviz
 from cvflow.baseOps import *
 
 
 class MultistepOp(Op):
 
     @property
+    def input(self):
+        assert hasattr(self, '_input'), 'During construction of %s, self.input is not specified.' % self
+        return self._input
+
+    @input.setter
+    def input(self, op):
+        # Input is not in immediate parents, 
+        # since, conceptually, self is the bottom node in this subtree.
+        self._input = op
+
+    @property
     def output(self):
+        assert hasattr(self, '_output'), 'During construction of %s, self.output is not specified.' % self
         return self._output
 
     @output.setter
@@ -12,6 +25,36 @@ class MultistepOp(Op):
         self.addParent(op)
         self._output = op
 
+    def assembleGraph(self, *args, **kwargs):
+        d = super().assembleGraph(*args, **kwargs)
+
+        if hasattr(self, 'members'):
+            graph_attr = dict(shape='box', label=str(self))
+            for k in 'color', 'style':
+                if k in self.node_properties:
+                    graph_attr[k] = self.node_properties[k]
+            sg = graphviz.Digraph(name='cluster %s' % self, graph_attr=graph_attr)
+            members = self.members
+
+            if self._includeSelfInMembers:
+                if self not in members:
+                    members.append(self)
+
+            # Add the 'uint8's for Dilate etc.
+            for member in members:
+                for parent in member.parents:
+                    if parent not in members:
+                        if len(parent.parents) > 0:
+                            if parent.parents[0] in members:
+                                members.append(parent)
+                        elif not isinstance(parent, BaseImage):
+                            members.append(parent)
+
+            for member in members:
+                sg.node(d._nid(member))
+            d._gv.subgraph(sg)
+
+        return d
 
 class DilateSobel(MultistepOp, Boolean):
 
@@ -64,7 +107,7 @@ class DilateSobel(MultistepOp, Boolean):
 
     @cached
     def value(self):
-        return self.sxbinary()
+        return self.sxbinary.value
 
 
 class SobelClip(MultistepOp, Op):
@@ -92,5 +135,5 @@ class SobelClip(MultistepOp, Op):
 
     @cached
     def value(self):
-        return self.clippedSobel()
+        return self.clippedSobel.value
 

@@ -5,7 +5,7 @@ import cv2
 import laneFindingPipeline, utils
 
 from cvflow import Op
-from cvflow.misc import cached, Smol, Box
+from cvflow.misc import cached, Circle, Box, Ellipse
 
 
 class Lambda(Op):
@@ -54,7 +54,7 @@ class AsBoolean(Boolean):
         self.addParent(parent)
 
 
-class Not(Boolean, Smol):
+class Not(Boolean, Circle):
 
     def __init__(self, parent):
         super().__init__()
@@ -63,6 +63,9 @@ class Not(Boolean, Smol):
     @property
     def value(self):
         return np.logical_not(self.parent().value)
+
+    def __str__(self):
+        return '!(%s)' % self.parent()
 
 
 class Color(Op):
@@ -289,7 +292,7 @@ class GreaterThan(_ElementwiseInequality):
             return left.value > right.value
 
 
-class AsType(Op, Smol):
+class AsType(Op, Circle):
 
     def __init__(self, parent, kind):
         super().__init__()
@@ -394,7 +397,7 @@ class Constant(Op):
         return out
 
 
-class And(Op, Box):
+class And(Op, Ellipse):
 
     def __init__(self, parent1, parent2):
         super().__init__()
@@ -427,7 +430,7 @@ class And(Op, Box):
         return '%s & %s' % tuple(self.parents)
 
 
-class Or(Op, Box):
+class Or(Op, Ellipse):
 
     def __init__(self, parent1, parent2):
         super().__init__()
@@ -509,4 +512,3 @@ class CountSeekingThresholdOp(Boolean):
 
     def __str__(self):
         return 'Count=%d threshold (tol %s; current %s).' % (self.goalCount, self.countTol, self.threshold)
-        

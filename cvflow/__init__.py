@@ -55,12 +55,12 @@ class Op:
     def parent(self, index=0):
         return self.parents[index]
 
-    def assembleGraph(self, d=None, currentRecursionDepth=0):
+    def assembleGraph(self, d=None, currentRecursionDepth=0, format='png'):
         # if isinstance(self, CvtColor):
         #     import utils; utils.bk()
         self._visited = True
         if d is None:
-            d = misc.NodeDigraph()
+            d = misc.NodeDigraph(format=format)
         d.add_node(self)
         for child in self.children:
             if not d.containsEdge(self, child):
@@ -73,32 +73,10 @@ class Op:
             if not parent._visited:
                 parent.assembleGraph(d, currentRecursionDepth+1)
 
-        if hasattr(self, 'members'):
-            sg = graphviz.Digraph(name='cluster %s' % self, graph_attr=dict(shape='box', label=str(self)))
-            members = self.members
-
-            if self._includeSelfInMembers:
-                if self not in members:
-                    members.append(self)
-
-            # Add the 'uint8's for Dilate etc.
-            for member in members:
-                for parent in member.parents:
-                    if parent not in members:
-                        if len(parent.parents) > 0:
-                            if parent.parents[0] in members:
-                                members.append(parent)
-                        elif not isinstance(parent, baseOps.BaseImage):
-                            members.append(parent)
-
-            for member in members:
-                sg.node(d._nid(member))
-            d._gv.subgraph(sg)
-
         # Clear the visited flags so subsequent calls will work.
         if currentRecursionDepth == 0:
             self._clearVisited()
-            
+
         return d
 
     def _clearVisited(self):
@@ -110,8 +88,13 @@ class Op:
             if parent._visited:
                 parent._clearVisited()
 
-    def draw(self):
-        d = self.assembleGraph()
+    def draw(self, savePath=None, format='png'):
+        d = self.assembleGraph(format=format)
+        if savePath is not None:
+            if savePath.lower().endswith('.%s' % format.lower()):
+                savePath = savePath[:-4]
+            outPath = d._gv.render(savePath)
+            print('Saved to %s.' % outPath)
         return d._gv
 
     def __str__(self):
@@ -127,30 +110,21 @@ class Op:
 from . import baseOps
 from . import compositeOps
 
-class Pipeline(Op):
+class Pipeline(compositeOps.MultistepOp):
 
     def __init__(self, image=None):
         super().__init__()
         if image is None:
             image = baseOps.ColorImage()
         assert isinstance(image, baseOps.BaseImage), ''
-        self.inputimage = image
-
-    @property
-    def outputbinary(self):
-        return self._outputbinary
-
-    @outputbinary.setter
-    def outputbinary(self, op):
-        self._outputbinary = op
-        self.addParent(op)
+        self.input = image
 
     @misc.cached
     def value(self):
-        return self._outputbinary.value
+        return self.output.value
 
     def __call__(self, imgarray):
-        self.inputimage.value = imgarray
+        self.input.value = imgarray
         return self.value
 
 
@@ -161,7 +135,7 @@ class ComplexPipeline(Pipeline):
         from cvflow.baseOps import Perspective, Blur, AsColor, CvtColor, EqualizeHistogram, ColorSplit
         from cvflow.compositeOps import SobelClip
 
-        perspective = Perspective(self.inputimage)
+        perspective = Perspective(self.input)
         blurred = Blur(perspective)
         #gray = AsMono(CvtColor(blurred, cv2.COLOR_RGB2GRAY))
         hls = AsColor(CvtColor(blurred, cv2.COLOR_RGB2HLS))
@@ -173,13 +147,9 @@ class ComplexPipeline(Pipeline):
         #bseq_channel = Blur(ColorSplit(hlseq, 2), 71)
 
         clippedSobelS = SobelClip(s_channel)
-        self.outputbinary = clippedSobelS
+        self.output = clippedSobelS
 
         self.members = [perspective, blurred, hls, eq, s_channel, clippedSobelS]
-
-    @misc.cached
-    def value(self):
-        return self.clippedSobelS()
 
 
 class SimplePipeline(Pipeline):
@@ -187,7 +157,7 @@ class SimplePipeline(Pipeline):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         from cvflow.baseOps import Perspective, Blur, AsColor, CvtColor, ColorSplit, Or, CountSeekingThresholdOp
-        perspective = Perspective(self.inputimage)
+        perspective = Perspective(self.input)
         blurred = Blur(perspective)
         hls = AsColor(CvtColor(blurred, cv2.COLOR_RGB2HLS))
         l_channel = ColorSplit(hls, 1)
@@ -195,5 +165,5 @@ class SimplePipeline(Pipeline):
         l_binary = CountSeekingThresholdOp(l_channel)
         s_binary = CountSeekingThresholdOp(s_channel)
         markings_binary = Or(l_binary, s_binary)
-        self.outputbinary = markings_binary
+        self.output = markings_binary
         self.members = [perspective, blurred, hls, l_channel, s_channel, l_binary, s_binary, markings_binary, self]

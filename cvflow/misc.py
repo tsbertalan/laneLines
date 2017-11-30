@@ -20,8 +20,8 @@ def cached(method):
 
 class NodeDigraph:
 
-    def __init__(self):
-        self._gv = graphviz.Digraph()
+    def __init__(self, format='png'):
+        self._gv = graphviz.Digraph(format=format)
         self._nx = networkx.DiGraph()
 
     def __contains__(self, obj):
@@ -60,7 +60,7 @@ class NodeDigraph:
             self._nx.add_edge(n1, n2)
 
 
-class Smol:
+class Circle:
 
     def _defaultNodeProperties(self):
         return dict(shape='circle')
@@ -69,3 +69,8 @@ class Box:
 
     def _defaultNodeProperties(self):
         return dict(shape='box')
+
+class Ellipse:
+
+    def _defaultNodeProperties(self):
+        return dict(shape='ellipse')
