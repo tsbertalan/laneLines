@@ -8,6 +8,8 @@ from sklearn.pipeline import make_pipeline
 import matplotlib.pyplot as plt
 import tqdm
 
+import cvflow as cf
+
 from utils import show, drawShape, isInteractive
 import utils
 
@@ -16,9 +18,6 @@ import smoothing
 from importlib import reload
 reload(utils)
 reload(smoothing)
-
-
-
 
 
 def window_mask(width, height, img_ref, center, level):
@@ -36,8 +35,10 @@ def window_mask(width, height, img_ref, center, level):
     ] = 1
     return output
 
+
 class MarkingNotFoundError(ValueError):
     pass
+
 
 class MarkingFinder(object):
 
@@ -338,7 +339,7 @@ class ConvolutionalMarkingFinder(MarkingFinder):
                 else:
                     colored[i] = zero_channel
             template = np.array(cv2.merge(colored), np.uint8) # make window pixels green
-            output = cv2.addWeighted(output, 1, template, 0.5, 0.0) # overlay the orignal road image with window results
+            output = cv2.addWeighted(output.astype('uint8'), 1, template, 0.5, 0.0) # overlay the orignal road image with window results
 
         return output
     
@@ -416,6 +417,7 @@ def circleKernel(ksize):
     kernel = (kernel * kernel.T > kernel.min()/3).astype('uint8')
     return kernel
 
+
 def morphologicalSmoothing(img, ksize=20):
     # For binary images only.
     # Circular kernel:
@@ -426,6 +428,7 @@ def morphologicalSmoothing(img, ksize=20):
     # Despeckle:
     img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel)
     return img
+
 
 class ColorFilter(object):
     """Apply a mixture of color or texture thresholdings to a warped image."""
@@ -659,28 +662,16 @@ class LaneFinder(object):
     """Stateful lane-marking finder for hood camera video."""
     
     def __init__(self, 
-        undistort=None,
         colorFilter=ColorFilter(),
-        perspective=PerspectiveTransformer(),
         markingFinder=ConvolutionalMarkingFinder(),
         Smoother=smoothing.BoxSmoother,
         ):
 
         # SET ALL CALLABLE ATTRIBUTES.
         
-        # Function for removing barrel distortion.
-        if undistort is None:
-            undistort = Undistorter()
-            import glob
-            undistort.fit(glob.glob('camera_cal/*.jpg'))
-        self.undistort = undistort
-
         # Function for applying various color/Sobel thresholds.
         self.colorFilter = colorFilter
         
-        # Function for transforming perspective.
-        self.perspective = perspective
-
         # Function for marking discovery.
         self.markingFinder = markingFinder
 
@@ -693,20 +684,8 @@ class LaneFinder(object):
             LaneMarking(smoothers=(Smoother(), Smoother())),
         )
 
-    def preprocess(self, frame, color=False, blurksize=5):
-        # Remove barrel distortion.
-        frame = self.undistort(frame)
-        
-        # Perspective-transform to a bird's-eye view.
-        frame = self.perspective(frame)
-
-        # Apply some blurring to remove e.g. window reflection.
-        frame = cv2.GaussianBlur(frame, (blurksize, blurksize), 0)
-        
-        # Do a mixture of color/Sobel thresholdings.
-        frame = self.colorFilter(frame, color=color)
-
-        return frame
+    def preprocess(self, frame, color=False):
+        return self.colorFilter(frame, color=color)
 
     def update(self, preprocessed):
         self.markingFinder.update(preprocessed)
@@ -732,6 +711,8 @@ class LaneFinder(object):
     def draw(self, frame, call=True, showTrapezoid=True, showThresholds=True, insetBEV=True, showLane=True, showCurves=True, showCentroids=True):
         if call:
             self(frame)
+        preprocessed = self.colorFilter.output.value
+        preprocessed_color = self.colorFilter.colorOutput.value
         left, right = self.laneMarkings
         
         composite = np.copy(frame)
@@ -763,13 +744,16 @@ class LaneFinder(object):
             cv2.fillConvexPoly(laneCurve, np.int32([points.T]), (232, 119, 34))
             inset = cv2.addWeighted(inset, 1.0, laneCurve, 0.4, 0)
 
+        perspective = self.colorFilter.getMembersByType(cf.workers.Perspective).perspectiveTransformer
+        undistort   = self.colorFilter.getMembersByType(cf.workers.Undistort  ).undistortTransformer
+
         if showTrapezoid:
-            x = self.perspective.dst[:, 0]
-            y = self.perspective.dst[:, 1]
+            x = perspective.dst[:, 0]
+            y = perspective.dst[:, 1]
             utils.drawLine(x, y, inset, color=(255, 105, 180), isClosed=True)
 
         if showThresholds:
-            inset = cv2.addWeighted(inset, 1.0, self.preprocess(frame, color=True), 1.0, 0)
+            inset = cv2.addWeighted(inset, 1.0, preprocessed_color, 1.0, 0)
 
         if showCurves:
             y = Ys[0]
@@ -783,11 +767,11 @@ class LaneFinder(object):
                 utils.drawLine(line(y), y, inset, color=(128, 128, 128), thickness=12)
 
         if showCentroids:
-            centroids = self.markingFinder.paint(self.preprocess(frame))
+            centroids = self.markingFinder.paint(preprocessed)
             inset = cv2.addWeighted(inset, 1.0, centroids, 0.5, 0)
 
         # Warp the inset down onto the main view.
-        composite = cv2.addWeighted(composite, 1.0, self.perspective(inset, inv=True), 0.8, 0)
+        composite = cv2.addWeighted(composite, 1.0, perspective(inset, inv=True), 0.8, 0)
 
         if insetBEV:
             if not hasattr(self, 'carDecal'):
@@ -828,41 +812,3 @@ class LaneFinder(object):
             y += 50
 
         return composite
-
-    def show(self, frame, axes=None):
-        """Visualize.
-
-        About 6x slower than function itself, fyi.
-        """
-        if axes is None:
-            fig, axes = plt.subplots(nrows=2)
-
-        if len(axes) > 1:
-            #Show the original frame.
-            show(frame, ax=axes[0])
-
-        ax = axes[-1]
-
-        # Show the preprocessed image on the bottom.
-        perspectived = self.perspective(self.undistort(frame))
-        preprocessed = self.colorFilter(perspectived, color=True)
-        if isinstance(self.markingFinder, ConvolutionalMarkingFinder):
-            warped = self.colorFilter(perspectived)
-            preprocessed = cv2.addWeighted(preprocessed, 1.0, self.markingFinder.paint(warped), 0.5, 0)
-        ax.imshow(preprocessed)
-
-        # Plot the lane markings and (faintly) their associated pixels.
-        for laneMarking in self(frame):
-            laneMarking.show(ax)
-
-        # Clean up the figure.
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.set_xlim(0, frame.shape[1])
-        ax.set_ylim(frame.shape[0], 0)
-        ax.figure.tight_layout()
-
-        return ax.figure, axes
-
-
-

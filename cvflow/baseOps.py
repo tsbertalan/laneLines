@@ -104,13 +104,30 @@ class ColorSplit(Mono):
         return 'channel %d' % self.index
 
 
+class ColorJoin(Color):
+
+    def __init__(self, *channels):
+        super().__init__()
+        for ch in channels:
+            #self.checkType(ch, Mono)
+            self.addParent(ch)
+
+    @property
+    def value(self):
+        return np.dstack([
+            ch.value
+            for ch in self.parents
+        ])
+
+
 class BaseImage(Op):
 
     def _defaultNodeProperties(self):
         return dict(shape='box')
 
-    def __init__(self):
+    def __init__(self, shape=(720, 1280)):
         super().__init__()
+        self.shape = shape
 
     @property
     def value(self):
@@ -294,15 +311,22 @@ class GreaterThan(_ElementwiseInequality):
 
 class AsType(Op, Circle):
 
-    def __init__(self, parent, kind):
+    def __init__(self, parent, kind, scaleUintTo255=False):
         super().__init__()
         self._skipForPlot = True
         self.addParent(parent)
         self.kind = kind
+        self.scaleUintTo255 = scaleUintTo255
 
     @cached
     def value(self):
-        return self.parent().value.astype(self.kind)
+        inarray = self.parent().value
+        if self.kind == 'uint8' or self.kind == np.uint8 and self.scaleUintTo255:
+            inarray = inarray.astype('float64')
+            inarray -= inarray.min()
+            inarray /= inarray.max()
+            inarray *= 255
+        return inarray.astype(self.kind)
 
     def __str__(self):
         return str(self.kind)

@@ -42,6 +42,8 @@ class Op:
 
     def addParent(self, parent):
         if not isinstance(parent, Op):
+            if isinstance(parent, np.ndarray):
+                print(parent.dtype)
             parent = baseOps.Constant(parent)
         if parent not in self.parents:
             self.parents.append(parent)
@@ -126,16 +128,22 @@ class Op:
         else:
             assert isinstance(obj, acceptedType), '`%s` needs to be %s for use in `%s`.' % (obj, acceptedType, self)
 
+    def getMembersByType(self, Kind, allowSingle=True):
+        out = [m for m in self.members if isinstance(m, Kind)]
+        if allowSingle and len(out) == 1:
+            out = out[0]
+        return out
+
 from . import baseOps
 from . import workers
 from . import compositeOps
 
 class Pipeline(compositeOps.MultistepOp):
 
-    def __init__(self, image=None):
+    def __init__(self, image=None, imageShape=(720, 1280)):
         super().__init__()
         if image is None:
-            image = baseOps.ColorImage()
+            image = baseOps.ColorImage(shape=imageShape)
         self.checkType(image, baseOps.BaseImage), ''
         self.input = image
 
@@ -143,9 +151,25 @@ class Pipeline(compositeOps.MultistepOp):
     def value(self):
         return self.output.value
 
-    def __call__(self, imgarray):
+    def __call__(self, imgarray, color=False):
         self.input.value = imgarray
+        if color:
+            if hasattr(self, 'colorOutput'):
+                return self.colorOutput.value
+            else:
+                from warnings import warn
+                warn('`%s` called with color=True, but does not implement colorOutput.' % self)
         return self.value
+
+    def constructColorOutpout(self, r, b, g, dtype='uint8', scaleUintTo255=True):
+        from cvflow.baseOps import AsType, ColorJoin
+        channels = [
+            np.zeros(self.input.shape).astype(dtype)
+            if c == 'zeros'
+            else AsType(c, dtype, scaleUintTo255=scaleUintTo255)
+            for c in (r,b,g)
+        ]
+        self.colorOutput = ColorJoin(*channels)
 
 
 class ComplexPipeline(Pipeline):
@@ -177,7 +201,7 @@ class SimplePipeline(Pipeline):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        from cvflow.baseOps import Blur, AsColor, CvtColor, ColorSplit, Or
+        from cvflow.baseOps import Blur, AsColor, CvtColor, ColorSplit, Or, ColorJoin
         from cvflow.workers import Undistort, Perspective, CountSeekingThreshold
         undistort = Undistort(self.input)
         perspective = Perspective(undistort)
@@ -189,4 +213,5 @@ class SimplePipeline(Pipeline):
         s_binary = CountSeekingThreshold(s_channel)
         markings_binary = Or(l_binary, s_binary)
         self.output = markings_binary
+        self.constructColorOutpout('zeros', l_binary, s_binary)
         self.members = [perspective, blurred, hls, l_channel, s_channel, l_binary, s_binary, markings_binary]

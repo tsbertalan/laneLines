@@ -231,11 +231,11 @@ class Undistort(Op):
     def __init__(self, camera, imgs=None, fit=True, **kwargs):
         super().__init__()
         self.addParent(camera)
-        self.undistort = UndistortTransformer(**kwargs)
+        self.undistortTransformer = UndistortTransformer(**kwargs)
 
         if fit:
-            self.undistort.fit(imgs)
+            self.undistortTransformer.fit(imgs)
 
     @cached
     def value(self):
-        return self.undistort(self.parent().value)
+        return self.undistortTransformer(self.parent().value)
