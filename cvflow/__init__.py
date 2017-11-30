@@ -59,13 +59,6 @@ class Op:
     def child(self, index=0):
         return self.children[index]
 
-    def _edgeAttachmentPoint(self):
-        if self._skipForPlot:
-            assert len(self.parents) == 1
-            return self.parent()
-        else:
-            return self
-
     def assembleGraph(self, d=None, currentRecursionDepth=0, format='png'):
         # if isinstance(self, CvtColor):
         #     import utils; utils.bk()
@@ -74,23 +67,24 @@ class Op:
         if d is None:
             d = misc.NodeDigraph(format=format)
 
-        here = self
         if self._skipForPlot:
             assert len(self.parents) == 1
-            here = self.parent()
-            here._visited = True
+        else:
+            for parent in self.parents:
+                target = parent
+                if target._skipForPlot:
+                    assert len(target.parents) == 1
+                    target = target.parent()
+                d.add_edge(target, self)
 
-        for parent in here.parents:
-            target = parent._edgeAttachmentPoint()
-            if not d.containsEdge(target, here):
-                d.add_edge(target, here)
+        for parent in self.parents:
             if not parent._visited:
                 parent.assembleGraph(d, currentRecursionDepth+1)
 
         for child in self.children:
             if not child._visited:
                 child.assembleGraph(d, currentRecursionDepth+1)
-                
+
         # Clear the visited flags so subsequent calls will work.
         if currentRecursionDepth == 0:
             self._clearVisited()
