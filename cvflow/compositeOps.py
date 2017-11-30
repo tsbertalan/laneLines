@@ -52,15 +52,12 @@ class MultistepOp(Op):
             if self not in members:
                 members.append(self)
 
-        # Don't include the input node or its parents.
-        members = [m for m in members if m is not self.input]
-
         # Add the 'uint8's for Dilate etc.
         for member in members:
             
             # Look at the immediate parents of our first-tier members.
             for parent in member.parents:
-                if parent not in members:
+                if parent is not self.input and parent not in members:
                     # The first grandparent is a member.
                     grandparents = parent.parents
                     if len(grandparents) > 0 and grandparents[0] in members:
@@ -69,7 +66,7 @@ class MultistepOp(Op):
                         members.append(parent)
 
         # Remove any nodes explicitly disincluded.
-        members = [m for m in members if not m._skipForPlot]
+        members = [m for m in members if not m._skipForPlot and m is not self.input]
 
         return members
 
