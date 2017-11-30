@@ -128,12 +128,14 @@ def _cached(method):
 def cached(method):
     return property(_cached(method))
 
+
 class Op:
 
     def __init__(self):
-        self.node_properties = {}
+        if not hasattr(self, 'node_properties'):
+            self.node_properties = {}
         if hasattr(self, '_defaultNodeProperties'):
-            self.node_properties = self._defaultNodeProperties()
+            self.node_properties.update(self._defaultNodeProperties())
         self._visited = False
 
     def invalidateCache(self):
@@ -303,9 +305,6 @@ class Mono(Op):
     def value(self):
         return self.parent()
 
-    def __str__(self):
-        return 'Mono'
-
 
 class AsMono(Mono):
 
@@ -320,9 +319,6 @@ class Boolean(Mono):
     
     def _defaultNodeProperties(self):
         return dict(color='grey', style='dashed')
-
-    def __str__(self):
-        return 'Bool'
 
 
 class AsBoolean(Boolean):
@@ -443,6 +439,9 @@ class CircleKernel(Mono):
         kernel = (kernel * kernel.T > kernel.min() / self.falloff).astype('uint8')
         return kernel
 
+    def __str__(self):
+        return 'O kernel(%d, %s)' % (self.ksize, self.falloff)
+
 
 class Dilate(Mono):
 
@@ -555,6 +554,9 @@ class CountSeekingThresholdOp(Boolean):
         self.threshold = out
         self.iterationCounts.append(niter)
         return mask
+
+    def __str__(self):
+        return 'Count=%d threshold (tol %s; current %s).' % (self.goalCount, self.countTol, self.threshold)
 
 
 class And(Op, Smol):
@@ -791,6 +793,8 @@ class EqualizeHistogram(Color):
             img[:, :, i] = cv2.equalizeHist(img[:, :, i])
         return img
 
+    # def __str__(self)
+
 
 class Perspective(Op):
 
@@ -812,9 +816,9 @@ class Pipeline(Op):
         self.addParent(image)
         self.perspective = Perspective(image)
         blurred = Blur(self.perspective)
-        gray = AsMono(CvtColor(blurred, cv2.COLOR_RGB2GRAY))
+        #gray = AsMono(CvtColor(blurred, cv2.COLOR_RGB2GRAY))
         hls = AsColor(CvtColor(blurred, cv2.COLOR_RGB2HLS))
-        #eq = EqualizeHistogram(blurred)
+        eq = EqualizeHistogram(blurred)
         #self.l_channel = ColorSplit(hls, 1)
         self.s_channel = ColorSplit(hls, 2)
 
