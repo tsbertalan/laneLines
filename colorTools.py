@@ -198,6 +198,24 @@ class Op:
                 d.add_edge(parent, self)
             if not parent._visited:
                 parent.assembleGraph(d, currentRecursionDepth+1)
+
+        if hasattr(self, 'members'):
+            sg = graphviz.Digraph(name='cluster %s' % self, graph_attr=dict(shape='box', label=str(self)))
+            members = self.members
+
+            # Add the 'uint8's for Dilate etc.
+            for member in members:
+                for parent in member.parents:
+                    if parent not in members:
+                        if len(parent.parents) > 0:
+                            if parent.parents[0] in members:
+                                members.append(parent)
+                        elif not isinstance(parent, BaseImage):
+                            members.append(parent)
+
+            for member in members:
+                sg.node(d._nid(member))
+            d._gv.subgraph(sg)
         return d
 
     def draw(self):
@@ -690,26 +708,26 @@ class DilateSobel(Boolean):
         self.dilationIterations = dilationIterations
 
         # Add a little *more* blurring.
-        blur = Blur(singleChannel, ksize=preblurksize)
-        self.sobelx = Sobel(blur, xy='x')
+        self.blur = Blur(singleChannel, ksize=preblurksize)
+        self.sobelx = Sobel(self.blur, xy='x')
 
         # Sobel mask.
         # mask_neg = AsBoolean(AsType(LessThan(   self.sobelx, -sx_thresh), 'float32'))
         # mask_pos = AsBoolean(AsType(GreaterThan(self.sobelx,  sx_thresh), 'float32'))
-        mask_neg = LessThan(   self.sobelx, -sx_thresh)
-        mask_pos = GreaterThan(self.sobelx,  sx_thresh)
+        self.mask_neg = LessThan(   self.sobelx, -sx_thresh)
+        self.mask_pos = GreaterThan(self.sobelx,  sx_thresh)
 
         kernel_midpoint = dilate_kernel[1] // 2
 
         # Dilate mask to the left.
         kernel = np.ones(dilate_kernel, 'uint8')
         kernel[:, 0:kernel_midpoint] = 0
-        self.dmask_neg = GreaterThan(Dilate(mask_neg, kernel, iterations=dilationIterations), 0.)
+        self.dmask_neg = GreaterThan(Dilate(self.mask_neg, kernel, iterations=dilationIterations), 0.)
 
         # Dilate mask to the right.
         kernel = np.ones(dilate_kernel, 'uint8')
         kernel[:, kernel_midpoint:] = 0
-        self.dmask_pos = GreaterThan(Dilate(mask_pos, kernel, iterations=dilationIterations), 0.)
+        self.dmask_pos = GreaterThan(Dilate(self.mask_pos, kernel, iterations=dilationIterations), 0.)
 
         # self.sxbinary = AsBoolean(AsType(And(self.dmask_pos, self.dmask_neg), 'uint8'))
         self.sxbinary = AsBoolean(And(self.dmask_pos, self.dmask_neg))
@@ -718,6 +736,17 @@ class DilateSobel(Boolean):
             self.sxbinary = Dilate(self.sxbinary)
 
         self.addParent(self.sxbinary)
+
+        self.members = [
+            self.sobelx, self.mask_neg, self.mask_pos, self.dmask_neg, 
+            self.dmask_pos, self.sxbinary, self.blur, self
+        ]
+        for m in self.members:
+            if (
+                m not in [self.blur]
+                and len(m.parents) > 0
+            ):
+                self.members.append(m.parents[0])
 
     @cached
     def value(self):
@@ -744,6 +773,8 @@ class SobelClip(Op):
         self.sobel = DilateSobel(self.toSobel)
         self.clippedSobel = And(self.sobel, self.narrow)
         self.addParent(self.clippedSobel)
+
+        self.members =  [self.threshold, self.narrow, self.wide, self.toSobel, self.sobel, self.clippedSobel, self]
 
     @cached
     def value(self):
