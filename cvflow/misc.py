@@ -1,3 +1,5 @@
+import networkx, graphviz
+
 def _cached(method):
     def wrappedMethod(self, *args, **kwargs):
         if not hasattr(self, '__cache__'):
@@ -63,3 +65,7 @@ class Smol:
     def _defaultNodeProperties(self):
         return dict(shape='circle')
 
+class Box:
+
+    def _defaultNodeProperties(self):
+        return dict(shape='box')

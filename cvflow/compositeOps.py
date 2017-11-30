@@ -1,65 +1,19 @@
 from cvflow.baseOps import *
 
-class CountSeekingThresholdOp(Boolean):
-    
-    def __init__(self, parent, initialThreshold=150, goalCount=10000, countTol=200):
-        super().__init__()
-        assert isinstance(parent, Mono)
-        self.addParent(parent)
-        self.threshold = initialThreshold
-        self.goalCount = goalCount
-        self.countTol = countTol
-        self.iterationCounts = []
-        
-    @cached
-    def value(self):
-        channel = self.parent()
-        goalCount = self.goalCount
-        countTol = self.countTol
-        
-        def getCount(threshold):
-            mask = channel > np.ceil(threshold)
-            return mask, mask.sum()
-        
-        threshold = self.threshold
-        
-        under = 0
-        over = 255
-        getThreshold = lambda : (over - under) / 2 + under
-        niter = 0
-        while True:
-            mask, count = getCount(threshold)
-            if (
-                abs(count - goalCount) < countTol
-                or over - under <= 1
-            ):
-                break
 
-            if count > goalCount:
-                # Too many pixels got in; threshold needs to be higher.
-                under = threshold
-                threshold = getThreshold()
-            else: # count < goalCout
-                if threshold > 254 and getCount(254)[1] > goalCount:
-                    # In the special case that opening any at all is too bright, die early.
-                    threshold = 255
-                    mask = np.zeros_like(channel, 'bool')
-                    break
-                over = threshold
-                threshold = getThreshold()
-            niter += 1
-                
-        out =  max(min(int(np.ceil(threshold)), 255), 0)
-        self.threshold = out
-        self.iterationCounts.append(niter)
-        return mask
+class MultistepOp(Op):
 
-    def __str__(self):
-        return 'Count=%d threshold (tol %s; current %s).' % (self.goalCount, self.countTol, self.threshold)
+    @property
+    def output(self):
+        return self._output
+
+    @output.setter
+    def output(self, op):
+        self.addParent(op)
+        self._output = op
 
 
-
-class DilateSobel(Boolean):
+class DilateSobel(MultistepOp, Boolean):
 
     def __init__(self, singleChannel, postdilate=True, preblurksize=13, sx_thresh=20, dilate_kernel=(2, 4), dilationIterations=3):
         super().__init__()
@@ -95,7 +49,7 @@ class DilateSobel(Boolean):
         if postdilate:
             self.sxbinary = Dilate(self.sxbinary)
 
-        self.addParent(self.sxbinary)
+        self.output = self.sxbinary
 
         self.members = [
             self.sobelx, self.mask_neg, self.mask_pos, self.dmask_neg, 
@@ -113,7 +67,7 @@ class DilateSobel(Boolean):
         return self.sxbinary()
 
 
-class SobelClip(Op):
+class SobelClip(MultistepOp, Op):
 
     def __init__(self, channel, threshold=None):
         super().__init__()
@@ -132,7 +86,7 @@ class SobelClip(Op):
 
         self.sobel = DilateSobel(self.toSobel)
         self.clippedSobel = And(self.sobel, self.narrow)
-        self.addParent(self.clippedSobel)
+        self.output = self.clippedSobel
 
         self.members =  [self.threshold, self.narrow, self.wide, self.toSobel, self.sobel, self.clippedSobel, self]
 
