@@ -178,6 +178,7 @@ class Dilate(Mono):
         super().__init__()
         assert isinstance(parent, Mono)
         self.addParent(AsType(parent, 'uint8'))
+        self.parent()._skipForPlot = True
         if isinstance(kernel, int):
             kernel = CircleKernel(kernel)
         self.addParent(kernel)

@@ -33,7 +33,8 @@ class NodeDigraph:
     def add_node(self, obj):
         # if isinstance(obj, Constant):
         #     import utils; utils.bk()
-            
+        if hasattr(obj, '_skipForPlot') and obj._skipForPlot:
+            raise ValueError("Node %s is not supposed to be added to the graph." % obj)
         if obj in self:
             return
         kw = {}

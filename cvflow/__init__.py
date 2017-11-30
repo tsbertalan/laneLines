@@ -14,6 +14,7 @@ class Op:
             self.node_properties.update(self._defaultNodeProperties())
         self._visited = False
         self._includeSelfInMembers = True
+        self._skipForPlot = False
 
     def invalidateCache(self):
         self.__cache__ = {}
@@ -55,24 +56,41 @@ class Op:
     def parent(self, index=0):
         return self.parents[index]
 
+    def child(self, index=0):
+        return self.children[index]
+
+    def _edgeAttachmentPoint(self):
+        if self._skipForPlot:
+            assert len(self.parents) == 1
+            return self.parent()
+        else:
+            return self
+
     def assembleGraph(self, d=None, currentRecursionDepth=0, format='png'):
         # if isinstance(self, CvtColor):
         #     import utils; utils.bk()
         self._visited = True
+
         if d is None:
             d = misc.NodeDigraph(format=format)
-        d.add_node(self)
-        for child in self.children:
-            if not d.containsEdge(self, child):
-                d.add_edge(self, child)
-            if not child._visited:
-                child.assembleGraph(d, currentRecursionDepth+1)
-        for parent in self.parents:
-            if not d.containsEdge(parent, self):
-                d.add_edge(parent, self)
+
+        here = self
+        if self._skipForPlot:
+            assert len(self.parents) == 1
+            here = self.parent()
+            here._visited = True
+
+        for parent in here.parents:
+            target = parent._edgeAttachmentPoint()
+            if not d.containsEdge(target, here):
+                d.add_edge(target, here)
             if not parent._visited:
                 parent.assembleGraph(d, currentRecursionDepth+1)
 
+        for child in self.children:
+            if not child._visited:
+                child.assembleGraph(d, currentRecursionDepth+1)
+                
         # Clear the visited flags so subsequent calls will work.
         if currentRecursionDepth == 0:
             self._clearVisited()

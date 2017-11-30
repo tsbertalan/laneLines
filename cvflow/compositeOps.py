@@ -42,13 +42,20 @@ class MultistepOp(Op):
 
             # Add the 'uint8's for Dilate etc.
             for member in members:
-                for parent in member.parents:
-                    if parent not in members:
-                        if len(parent.parents) > 0:
-                            if parent.parents[0] in members:
+                # Don't include parents of the input node!
+                if member is not self.input:
+                    # Look at the immediate parents of our first-tier members.
+                    for parent in member.parents:
+                        if parent not in members:
+                            # The first grandparent is a member.
+                            grandparents = parent.parents
+                            if len(grandparents) > 0 and grandparents[0] in members:
+                                    members.append(parent)
+                            elif not isinstance(parent, BaseImage):
                                 members.append(parent)
-                        elif not isinstance(parent, BaseImage):
-                            members.append(parent)
+
+            # Remove any nodes explicitly disincluded.
+            members = [m for m in members if not m._skipForPlot]
 
             for member in members:
                 sg.node(d._nid(member))
@@ -63,6 +70,8 @@ class DilateSobel(MultistepOp, Boolean):
         self.sx_thresh = sx_thresh
         self.dilate_kernel = dilate_kernel
         self.dilationIterations = dilationIterations
+
+        self.input = singleChannel
 
         # Add a little *more* blurring.
         self.blur = Blur(singleChannel, ksize=preblurksize)
@@ -98,12 +107,6 @@ class DilateSobel(MultistepOp, Boolean):
             self.sobelx, self.mask_neg, self.mask_pos, self.dmask_neg, 
             self.dmask_pos, self.sxbinary, self.blur, self
         ]
-        for m in self.members:
-            if (
-                m not in [self.blur]
-                and len(m.parents) > 0
-            ):
-                self.members.append(m.parents[0])
 
     @cached
     def value(self):
@@ -114,6 +117,8 @@ class SobelClip(MultistepOp, Op):
 
     def __init__(self, channel, threshold=None):
         super().__init__()
+
+        self.input = channel
 
         # Adaptive thresholding of color.
         if threshold is None:
