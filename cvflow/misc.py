@@ -1,4 +1,4 @@
-import networkx, graphviz
+import networkx, graphviz, matplotlib.pyplot as plt
 
 def _cached(method):
     def wrappedMethod(self, *args, **kwargs):
@@ -75,3 +75,21 @@ class Ellipse:
 
     def _defaultNodeProperties(self):
         return dict(shape='ellipse')
+
+
+def isInteractive():
+    """Are we in a notebook?"""
+    import __main__ as main
+    return not hasattr(main, '__file__')
+
+
+def show(img, ax=None, title=None, clearTicks=True):
+    """Display an image without x/y ticks."""
+    if ax is None:
+        fig, ax = plt.subplots()
+    ax.imshow(img)
+    if clearTicks:
+        ax.set_xticks([])
+        ax.set_yticks([])
+    if title is not None: ax.set_title(title)
+    return ax.figure, ax

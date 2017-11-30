@@ -1,5 +1,6 @@
 import graphviz
 from cvflow.baseOps import *
+from cvflow.workers import *
 
 
 class MultistepOp(Op):
@@ -26,42 +27,56 @@ class MultistepOp(Op):
         self._output = op
 
     def assembleGraph(self, *args, **kwargs):
+        # Do the normal graph construction recursion.
         d = super().assembleGraph(*args, **kwargs)
 
-        if hasattr(self, 'members'):
-            graph_attr = dict(shape='box', label=str(self))
-            for k in 'color', 'style':
-                if k in self.node_properties:
-                    graph_attr[k] = self.node_properties[k]
-            sg = graphviz.Digraph(name='cluster %s' % self, graph_attr=graph_attr)
-            members = self.members
-
-            if self._includeSelfInMembers:
-                if self not in members:
-                    members.append(self)
-
-            # Add the 'uint8's for Dilate etc.
-            for member in members:
-                # Don't include parents of the input node!
-                if member is not self.input:
-                    # Look at the immediate parents of our first-tier members.
-                    for parent in member.parents:
-                        if parent not in members:
-                            # The first grandparent is a member.
-                            grandparents = parent.parents
-                            if len(grandparents) > 0 and grandparents[0] in members:
-                                    members.append(parent)
-                            elif not isinstance(parent, BaseImage):
-                                members.append(parent)
-
-            # Remove any nodes explicitly disincluded.
-            members = [m for m in members if not m._skipForPlot]
-
-            for member in members:
-                sg.node(d._nid(member))
-            d._gv.subgraph(sg)
+        # Add subgraph with members of this op.
+        members = self.members
+        graph_attr = dict(shape='box', label=str(self))
+        for k in 'color', 'style':
+            if k in self.node_properties:
+                graph_attr[k] = self.node_properties[k]
+        sg = graphviz.Digraph(name='cluster %s' % self, graph_attr=graph_attr)
+        for member in members:
+            sg.node(d._nid(member))
+        d._gv.subgraph(sg)
 
         return d
+
+    @property
+    def members(self):
+        if not hasattr(self, '_members'): self._members = []
+        members = self._members
+
+        if self._includeSelfInMembers:
+            if self not in members:
+                members.append(self)
+
+        # Don't include the input node or its parents.
+        members = [m for m in members if m is not self.input]
+
+        # Add the 'uint8's for Dilate etc.
+        for member in members:
+            
+            # Look at the immediate parents of our first-tier members.
+            for parent in member.parents:
+                if parent not in members:
+                    # The first grandparent is a member.
+                    grandparents = parent.parents
+                    if len(grandparents) > 0 and grandparents[0] in members:
+                            members.append(parent)
+                    elif not isinstance(parent, BaseImage):
+                        members.append(parent)
+
+        # Remove any nodes explicitly disincluded.
+        members = [m for m in members if not m._skipForPlot]
+
+        return members
+
+    @members.setter
+    def members(self, newmembers):
+        if not hasattr(self, '_members'): self._members = []
+        self._members.extend(newmembers)
 
 class DilateSobel(MultistepOp, Boolean):
 
@@ -122,7 +137,7 @@ class SobelClip(MultistepOp, Op):
 
         # Adaptive thresholding of color.
         if threshold is None:
-            threshold = CountSeekingThresholdOp(channel)
+            threshold = CountSeekingThreshold(channel)
         self.threshold = threshold
 
         # Dilated masks of the threshold.

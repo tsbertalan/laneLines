@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 import networkx, graphviz
 
-import laneFindingPipeline, utils
+import utils
 from . import misc
 
 class Op:
@@ -117,9 +117,10 @@ class Op:
 
     def showValue(self, **kwargs):
         kwargs.setdefault('title', '%s $\leftarrow$ %s' % (self, tuple(self.parents)))
-        utils.show(self.value, **kwargs)
+        misc.show(self.value, **kwargs)
 
 from . import baseOps
+from . import workers
 from . import compositeOps
 
 class Pipeline(compositeOps.MultistepOp):
@@ -168,14 +169,16 @@ class SimplePipeline(Pipeline):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        from cvflow.baseOps import Perspective, Blur, AsColor, CvtColor, ColorSplit, Or, CountSeekingThresholdOp
-        perspective = Perspective(self.input)
+        from cvflow.baseOps import Blur, AsColor, CvtColor, ColorSplit, Or
+        from cvflow.workers import Undistort, Perspective, CountSeekingThreshold
+        undistort = Undistort(self.input)
+        perspective = Perspective(undistort)
         blurred = Blur(perspective)
         hls = AsColor(CvtColor(blurred, cv2.COLOR_RGB2HLS))
         l_channel = ColorSplit(hls, 1)
         s_channel = ColorSplit(hls, 2)
-        l_binary = CountSeekingThresholdOp(l_channel)
-        s_binary = CountSeekingThresholdOp(s_channel)
+        l_binary = CountSeekingThreshold(l_channel)
+        s_binary = CountSeekingThreshold(s_channel)
         markings_binary = Or(l_binary, s_binary)
         self.output = markings_binary
         self.members = [perspective, blurred, hls, l_channel, s_channel, l_binary, s_binary, markings_binary, self]

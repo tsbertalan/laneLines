@@ -1,9 +1,6 @@
 import numpy as np
 import cv2
 
-# TODO: Remove these imports.
-import laneFindingPipeline, utils
-
 from cvflow import Op
 from cvflow.misc import cached, Circle, Box, Ellipse
 
@@ -367,18 +364,6 @@ class EqualizeHistogram(Color):
     # def __str__(self)
 
 
-class Perspective(Op):
-
-    def __init__(self, camera, **kwargs):
-        super().__init__()
-        self.addParent(camera)
-        self.perspectiveTransformer = laneFindingPipeline.PerspectiveTransformer(**kwargs)
-
-    @cached
-    def value(self):
-        return self.perspectiveTransformer(self.parent().value)
-
-
 class Constant(Op):
 
     def _defaultNodeProperties(self):
@@ -457,59 +442,3 @@ class Or(Op, Ellipse):
         return '%s | %s' % tuple(self.parents)
 
 
-class CountSeekingThresholdOp(Boolean):
-    
-    def __init__(self, parent, initialThreshold=150, goalCount=10000, countTol=200):
-        super().__init__()
-        assert isinstance(parent, Mono), '%s is not explicitly single-channel.' % parent
-        self.addParent(parent)
-        self.threshold = initialThreshold
-        self.goalCount = goalCount
-        self.countTol = countTol
-        self.iterationCounts = []
-        
-    @cached
-    def value(self):
-        channel = self.parent()
-        goalCount = self.goalCount
-        countTol = self.countTol
-        
-        def getCount(threshold):
-            mask = channel.value > np.ceil(threshold)
-            return mask, mask.sum()
-        
-        threshold = self.threshold
-        
-        under = 0
-        over = 255
-        getThreshold = lambda : (over - under) / 2 + under
-        niter = 0
-        while True:
-            mask, count = getCount(threshold)
-            if (
-                abs(count - goalCount) < countTol
-                or over - under <= 1
-            ):
-                break
-
-            if count > goalCount:
-                # Too many pixels got in; threshold needs to be higher.
-                under = threshold
-                threshold = getThreshold()
-            else: # count < goalCout
-                if threshold > 254 and getCount(254)[1] > goalCount:
-                    # In the special case that opening any at all is too bright, die early.
-                    threshold = 255
-                    mask = np.zeros_like(channel, 'bool')
-                    break
-                over = threshold
-                threshold = getThreshold()
-            niter += 1
-                
-        out =  max(min(int(np.ceil(threshold)), 255), 0)
-        self.threshold = out
-        self.iterationCounts.append(niter)
-        return mask
-
-    def __str__(self):
-        return 'Count=%d threshold (tol %s; current %s).' % (self.goalCount, self.countTol, self.threshold)
