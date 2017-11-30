@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import skvideo.io
 from IPython.display import HTML
 import cv2
+import skvideo.io
 
 
 def showVid(fpath):
@@ -83,3 +84,40 @@ def drawLine(x, y, canvas, **kwargs):
         canvas, np.int32([np.stack([x, y]).T]),
         **kwargs
     )
+
+
+def loadFrames(videoPrefices=('project', 'challenge', 'harder_challenge'), maxframes=None):
+    allFrames = {}
+    for videoPrefix in videoPrefices:
+        fpath = '%s_video.mp4' % videoPrefix
+        reader = skvideo.io.FFmpegReader(fpath)
+        frames = []
+        actualMaxFrames = reader.inputframenum if maxframes is None else maxframes
+        bar = tqdm.tqdm_notebook(
+            total=actualMaxFrames,
+            desc='load %s' % videoPrefix,
+        )
+        for frame in reader.nextFrame():
+            if len(frames) == actualMaxFrames:
+                break
+            bar.update()
+            frames.append(frame)
+        allFrames[videoPrefix] = frames
+    return allFrames
+
+
+def transformVideo(filePathOrFrames, outPath, transformFunction, **tqdmKw):
+
+    if isinstance(filePathOrFrames, str):
+        reader = skvideo.io.FFmpegReader(filePathOrFrames)
+        frameSource = reader.nextFrame()
+        total = reader.inputframenum
+        tqdmKw['total'] = total
+    else:
+        frameSource = filePathOrFrames
+
+        if 'total' not in tqdmKw:
+            total = len(frameSource)
+            tqdmKw['total'] = total
+
+    return saveVideo((transformFunction(frame) for frame in frameSource), outPath, **tqdmKw)
