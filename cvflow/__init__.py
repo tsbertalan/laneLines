@@ -6,9 +6,11 @@ from .op import Op
 from . import misc
 from . import baseOps
 from . import workers
+from . import multistep
 from . import compositeOps
 from .baseOps import *
 from .workers import *
+from .multistep import *
 from .compositeOps import *
 
 
