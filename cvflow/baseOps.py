@@ -92,16 +92,29 @@ class ColorSplit(Mono):
 
     def __init__(self, color, index):
         super().__init__()
+        self.index = index
         self.checkType(color, Color)
         self.addParent(color)
-        self.index = index
 
     @property
     def value(self):
         return self.parent().value[:, :, self.index]
 
     def __str__(self):
-        return 'channel %d' % self.index
+        out = originalOut = 'channel %d' % self.index
+        Target = CvtColor
+        target = self.parent()
+        if not isinstance(target, Target):
+            target = target.parent()
+        if isinstance(target, Target):
+            out = str(target).split()[-1]
+            if out.endswith('.'):
+                out = out[:-1]
+            if len(out) != 3 or len(out) <= self.index:
+                out = originalOut
+            else:
+                out = out[self.index] + ' channel'
+        return out
 
 
 class ColorJoin(Color):
@@ -167,7 +180,7 @@ class Blur(Op):
         return cv2.GaussianBlur(self.parent().value, (self.ksize, self.ksize), 0)
 
     def __str__(self):
-        return 'Blur with width-%d kernel.' % self.ksize
+        return '%dx%d Gaussian blur' % (self.ksize, self.ksize)
 
 
 class CircleKernel(Mono):
@@ -324,8 +337,10 @@ class AsType(Op, Circle):
         if self.kind == 'uint8' or self.kind == np.uint8 and self.scaleUintTo255:
             inarray = inarray.astype('float64')
             inarray -= inarray.min()
-            inarray /= inarray.max()
-            inarray *= 255
+            m = inarray.max()
+            if m != 0:
+                inarray /= m
+                inarray *= 255
         return inarray.astype(self.kind)
 
     def __str__(self):
@@ -370,7 +385,7 @@ class CvtColor(Op):
         return cv2.cvtColor(self.parent().value, self.pairFlag)
 
     def __str__(self):
-        return 'Convert from %s to %s.' % tuple(
+        return '%s to %s.' % tuple(
             self._pairFlagsCodes[self.pairFlag].replace('COLOR_', '').split('2')
         )
 

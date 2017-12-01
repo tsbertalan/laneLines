@@ -1,3 +1,4 @@
+import cvflow
 import networkx, graphviz, matplotlib.pyplot as plt
 
 def _cached(method):
@@ -38,7 +39,12 @@ class NodeDigraph:
         kw = {}
         if hasattr(obj, 'node_properties'):
             kw.update(obj.node_properties)
-        kw['label'] = str(obj)
+        label = str(obj)
+        if not hasattr(obj, 'nodeName') and isinstance(obj, cvflow.Pipeline):
+            obj.nodeName = 'output'
+        if hasattr(obj, 'nodeName'):
+            label = '%s (%s)' % (obj.nodeName, label)
+        kw['label'] = label
         #kw.setdefault('label', str(obj))
         nid = self._nid(obj)
         self._gv.node(nid, **kw)

@@ -1,6 +1,7 @@
 import graphviz
 from cvflow.baseOps import *
 from cvflow.workers import *
+from cvflow.misc import cached
 
 
 class MultistepOp(Op):
@@ -23,6 +24,7 @@ class MultistepOp(Op):
 
     @output.setter
     def output(self, op):
+        op.nodeName = 'output'
         self.addParent(op)
         self._output = op
 
@@ -75,6 +77,7 @@ class MultistepOp(Op):
         if not hasattr(self, '_members'): self._members = []
         self._members.extend(newmembers)
 
+
 class DilateSobel(MultistepOp, Boolean):
 
     def __init__(self, singleChannel, postdilate=True, preblurksize=13, sx_thresh=20, dilate_kernel=(2, 4), dilationIterations=3):
@@ -117,7 +120,7 @@ class DilateSobel(MultistepOp, Boolean):
 
         self.members = [
             self.sobelx, self.mask_neg, self.mask_pos, self.dmask_neg, 
-            self.dmask_pos, self.sxbinary, self.blur, self
+            self.dmask_pos, self.sxbinary, self.blur
         ]
 
     @cached
@@ -148,9 +151,48 @@ class SobelClip(MultistepOp, Op):
         self.clippedSobel = And(self.sobel, self.narrow)
         self.output = self.clippedSobel
 
-        self.members =  [self.threshold, self.narrow, self.wide, self.toSobel, self.sobel, self.clippedSobel, self]
+        self.members =  [self.threshold, self.narrow, self.wide, self.toSobel, self.sobel, self.clippedSobel]
 
     @cached
     def value(self):
         return self.clippedSobel.value
 
+
+class Pipeline(MultistepOp):
+
+    def __init__(self, image=None, imageShape=(720, 1280)):
+        super().__init__()
+        if image is None:
+            image = ColorImage(shape=imageShape)
+        self.checkType(image, BaseImage), ''
+        self.input = image
+        self.input.nodeName = 'input'
+
+    @cached
+    def value(self):
+        return self.output.value
+
+    def __call__(self, imgarray, color=False):
+        self.input.value = imgarray
+        if color:
+            if hasattr(self, 'colorOutput'):
+                return self.colorOutput.value
+            else:
+                from warnings import warn
+                warn('`%s` called with color=True, but does not implement colorOutput.' % self)
+        return self.value
+
+    def constructColorOutpout(self, r, b, g, dtype='uint8', scaleUintTo255=True):
+        channels = [
+            Constant(np.zeros(self.input.shape).astype(dtype))
+            if c == 'zeros'
+            else AsType(c, dtype, scaleUintTo255=scaleUintTo255)
+            for c in (r,b,g)
+        ]
+        for c in channels:
+            if isinstance(c, Constant):
+                c._skipForPlot = True
+
+        self.colorOutput = ColorJoin(*channels)
+        self.colorOutput.nodeName = 'color output'
+        self.members = [self.colorOutput]
