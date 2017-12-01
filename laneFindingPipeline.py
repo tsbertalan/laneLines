@@ -671,6 +671,8 @@ class LaneFinder(object):
         
         # Function for applying various color/Sobel thresholds.
         self.colorFilter = colorFilter
+        self.perspective = self.colorFilter.getMembersByType(cf.workers.Perspective).perspectiveTransformer
+        #self.undistort   = self.colorFilter.getMembersByType(cf.workers.Undistort  ).undistortTransformer
         
         # Function for marking discovery.
         self.markingFinder = markingFinder
@@ -744,12 +746,11 @@ class LaneFinder(object):
             cv2.fillConvexPoly(laneCurve, np.int32([points.T]), (232, 119, 34))
             inset = cv2.addWeighted(inset, 1.0, laneCurve, 0.4, 0)
 
-        perspective = self.colorFilter.getMembersByType(cf.workers.Perspective).perspectiveTransformer
-        undistort   = self.colorFilter.getMembersByType(cf.workers.Undistort  ).undistortTransformer
+        
 
         if showTrapezoid:
-            x = perspective.dst[:, 0]
-            y = perspective.dst[:, 1]
+            x = self.perspective.dst[:, 0]
+            y = self.perspective.dst[:, 1]
             utils.drawLine(x, y, inset, color=(255, 105, 180), isClosed=True)
 
         if showThresholds:
@@ -771,7 +772,7 @@ class LaneFinder(object):
             inset = cv2.addWeighted(inset, 1.0, centroids, 0.5, 0)
 
         # Warp the inset down onto the main view.
-        composite = cv2.addWeighted(composite, 1.0, perspective(inset, inv=True), 0.8, 0)
+        composite = cv2.addWeighted(composite, 1.0, self.perspective(inset, inv=True), 0.8, 0)
 
         if insetBEV:
             if not hasattr(self, 'carDecal'):
