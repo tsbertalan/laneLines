@@ -172,12 +172,12 @@ class CountSeekingThreshold(Boolean):
         
     @cached
     def value(self):
-        channel = self.parent()
+        channel = self.parent().value
         goalCount = self.goalCount
         countTol = self.countTol
         
         def getCount(threshold):
-            mask = channel.value > np.ceil(threshold)
+            mask = channel > np.ceil(threshold)
             return mask, mask.sum()
         
         threshold = self.threshold

@@ -1,5 +1,6 @@
 import graphviz
 
+import cvflow
 from cvflow import Op
 from cvflow.misc import cached
 from cvflow.baseOps import *
@@ -123,12 +124,80 @@ class MultistepOp(Op):
         members.append(self.output)
         members = [m for m in members if not m.hidden]
 
-        return members
+        return list(set(members))
 
     @members.setter
     def members(self, newmembers):
         if not hasattr(self, '_members'): self._members = []
         self._members.extend(newmembers)
+
+    @property
+    def toposortMembers(self):
+        toposort = self.assembleGraph().toposort()
+        return [m for m in toposort if m in self.members]
+
+    def showMembers(self, 
+        which='all', axes=None, titleSize=10, subplotKwargs={},
+        #excludeTypes=[cvflow.baseOps.CvtColor,],
+        excludeTypes=[Input],
+        showMultistepParents=True, titleColor='black',
+        _getColor=None,
+        **kwargs):
+        for k, v in dict(top=.9, bottom=0, left=0, right=1, wspace=.01, hspace=.17).items():
+            kwargs.setdefault(k, v)
+        if which == 'all':
+            which = self.members
+        # Order members topologically.
+        which = [
+            m for m in self.toposortMembers
+            if m in which and type(m) not in excludeTypes
+        ]
+
+        if axes is None:
+            axes = cvflow.misc.axesGrid(len(which), clearTicks=True, **subplotKwargs).ravel()
+        assert len(which) <= len(axes)
+
+        multistepColorSources = ['red', 'blue', 'green', 'orange', 'magenta', 'cyan']
+        if _getColor is None:
+            def _getColor():
+                out = multistepColorSources[_getColor.i]
+                _getColor.i += 1
+                if _getColor.i == len(multistepColorSources):
+                    _getColor.i = 0
+                return out
+            _getColor.i = 0
+
+        multistepColors = {}
+
+        for op, ax in zip(which, axes):
+            op.showValue(ax=ax, **kwargs)
+            if isinstance(op, MultistepOp):
+                color = _getColor()
+                multistepColors[op] = color
+                ax.title.set_color(color)
+                for side in 'left', 'right', 'top', 'bottom':
+                    ax.spines[side].set_color(color)
+                    ax.spines[side].set_linewidth(4)
+                ax.set_frame_on(True)
+            if titleSize is not None:
+                ax.title.set_fontsize(titleSize)
+
+        fig = axes[0].figure
+        if titleColor != 'black':
+            #fig.frameon(True)
+            fig.patch.set_edgecolor(titleColor)
+            fig.patch.set_linewidth(4)
+        fig.suptitle(str(self) if not hasattr(self, 'nodeName') else self.nodeName, color=titleColor)
+        shown = [fig]
+
+        if showMultistepParents:
+            for p in [p for p in which if isinstance(p, cvflow.MultistepOp)]:
+                shown.extend(p.showMembers(
+                    which='all', subplotKwargs=subplotKwargs, excludeTypes=excludeTypes, 
+                    showMultistepParents=True, titleColor=multistepColors[p], _getColor=_getColor,
+                ))
+
+        return shown
 
 
 class Pipeline(MultistepOp):

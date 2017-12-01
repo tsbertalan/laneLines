@@ -1,8 +1,16 @@
+import numpy as np
 import cvflow
 from . import misc
 
 
 class Op:
+
+    def __init__(self):
+        if hasattr(self, '_defaultNodeProperties'):
+            self.node_properties.update(self._defaultNodeProperties())
+        self._visited = False
+        self._includeSelfInMembers = False
+        self.hidden = False
 
     @property
     def node_properties(self):
@@ -13,13 +21,6 @@ class Op:
     @node_properties.setter
     def node_properties(self, newdict):
         self._node_properties = newdict
-
-    def __init__(self):
-        if hasattr(self, '_defaultNodeProperties'):
-            self.node_properties.update(self._defaultNodeProperties())
-        self._visited = False
-        self._includeSelfInMembers = False
-        self.hidden = False
 
     def invalidateCache(self):
         self.__cache__ = {}
@@ -109,7 +110,7 @@ class Op:
                     op.nodeName = nodeName
                     return op
 
-                dummy = cvflow.Constant(42)
+                dummy = cvflow.baseOps.Constant(42)
                 dummy.hidden = True
                 keyMembers = [
                     nn(Op, 'Continuous'),
@@ -149,9 +150,61 @@ class Op:
     def __repr__(self):
         return str(self)
 
-    def showValue(self, **kwargs):
-        kwargs.setdefault('title', '%s $\leftarrow$ %s' % (self, tuple(self.parents)))
-        misc.show(self.value, **kwargs)
+    def getPlotTitleName(self, maxlen=17):
+        if hasattr(self, 'nodeName'):
+            return self.nodeName
+
+        if isinstance(self, (
+            #cvflow.PassThrough, 
+            cvflow.AsType, cvflow.AsMono, cvflow.AsColor
+            )) and len(self.parents) == 1:
+            self = self.parent()
+            out = str(self)
+        elif isinstance(self, cvflow.PassThrough):
+            out = '%s (%s)' % (type(self).__name__, self.parent().getPlotTitleName())
+        else:
+            out = str(self)
+        
+        if out == '' or len(out) > maxlen:
+            out = type(self).__name__
+
+        # If it's still to long, just truncate.
+        if len(out) > maxlen:
+            out = out[:maxlen-3] + '...'
+
+        return out
+
+    def showValue(self, showMultistepParents=True, **kwargs):
+        excludedParentTypes = [cvflow.Constant, cvflow.CircleKernel]
+        skipPastParentTypes = [cvflow.AsMono, cvflow.AsColor, cvflow.AsType]
+
+        if isinstance(self, cvflow.MultistepOp):
+            parents = [self.input]
+            arrow = r'$\rightarrow\ldots\rightarrow$'
+        else:
+            arrow = r'$\rightarrow$'
+            parents = [
+                p for p in self.parents 
+                if type(p) not in excludedParentTypes
+            ]
+            parents = [
+                p.parent() if type(p) in skipPastParentTypes and len(p.parents) > 0 else p
+                for p in parents
+            ]
+
+        parentNames = ', '.join([
+            p.getPlotTitleName()
+            for p in parents
+        ])
+        if len(parents) > 1: parentNames = '(%s)' % parentNames
+
+        selfName = self.getPlotTitleName()
+        kwargs.setdefault('title', r'%s %s %s' % (
+            parentNames,
+            arrow,
+            selfName, 
+        ))
+        return misc.show(self.value, **kwargs)
 
     def checkType(self, obj, acceptedType, invert=False):
         # Wow it's almost like type-checking is a useful thing to have in a language.

@@ -1,5 +1,6 @@
 import cvflow
 import networkx, graphviz, matplotlib.pyplot as plt
+import numpy as np
 
 def _cached(method):
     def wrappedMethod(self, *args, **kwargs):
@@ -25,6 +26,7 @@ class NodeDigraph:
         self._gv = graphviz.Digraph(format=format)
         self._nx = networkx.DiGraph()
         self.subgraphs = {}
+        self.nodes = {}
 
     def __contains__(self, obj):
         return self._nid(obj) in self._nx
@@ -66,6 +68,7 @@ class NodeDigraph:
         nid = self._nid(obj)
         self._nx.add_node(nid)
         gv.node(nid, **kw)
+        self.nodes[nid] = obj
 
     def _nid(self, obj):
         return ''.join((str(id(obj)) + str(obj)).split())
@@ -79,16 +82,21 @@ class NodeDigraph:
             self._gv.edge(n1, n2)
             self._nx.add_edge(n1, n2)
 
+    def toposort(self):
+        return [self.nodes[nid] for nid in networkx.topological_sort(self._nx)]
+
 
 class Circle:
 
     def _defaultNodeProperties(self):
         return dict(shape='circle')
 
+
 class Box:
 
     def _defaultNodeProperties(self):
         return dict(shape='box')
+
 
 class Ellipse:
 
@@ -102,7 +110,7 @@ def isInteractive():
     return not hasattr(main, '__file__')
 
 
-def show(img, ax=None, title=None, clearTicks=True):
+def show(img, ax=None, title=None, clearTicks=True, titleColor='black', **subplots_adjust):
     """Display an image without x/y ticks."""
     if ax is None:
         fig, ax = plt.subplots()
@@ -110,5 +118,38 @@ def show(img, ax=None, title=None, clearTicks=True):
     if clearTicks:
         ax.set_xticks([])
         ax.set_yticks([])
-    if title is not None: ax.set_title(title)
+    if title is not None: ax.set_title(title, color=titleColor)
+    if len(subplots_adjust) > 0:
+        ax.figure.subplots_adjust(**subplots_adjust)
     return ax.figure, ax
+
+
+def axesGrid(count, fromsquare=True, preferTall=True, clearTicks=False, **subplotKwargs):
+
+    # Either find the next-largest perfect square,
+    # Or the divisors of count that are closest to its square root.
+    a = int(np.ceil(np.sqrt(count)))
+    if fromsquare:
+        b = a
+    else:
+        for b in range(a, count+1):
+            a = float(count) / b
+            if a == int(a):
+                a = int(a)
+                break
+    if (a-1) * b > count:
+        a -= 1
+    if preferTall:
+        assert b >= a
+        axes = plt.subplots(nrows=b, ncols=a, **subplotKwargs)[1]
+    else:
+        axes = plt.subplots(nrows=a, ncols=b, **subplotKwargs)[1]
+
+    if clearTicks:
+        for ax in axes.ravel():
+            ax.patch.set_facecolor('None')
+            ax.set_frame_on(False)
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+    return axes

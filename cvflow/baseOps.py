@@ -144,7 +144,10 @@ class BaseImage(Op):
 
     @property
     def value(self):
-        return self.image
+        try:
+            return self.image
+        except AttributeError:
+            raise RuntimeError('self.value for `%s` is not yet initialized.' % self)
 
     @value.setter
     def value(self, newimage):
@@ -421,11 +424,19 @@ class Constant(Op):
         self.theConstant = theConstant
 
     @property
+    def shape(self):
+        return self.theConstant.shape
+
+    @property
     def value(self):
         return self.theConstant
 
     def __str__(self):
-        out = str(self.theConstant).replace(':', '_')
+        if isinstance(self.theConstant, np.ndarray):
+            what = 'ndarray'
+        else:
+            what = self.theConstant
+        out = str(what).replace(':', '_')
         out = out[:50]
         return out
 
