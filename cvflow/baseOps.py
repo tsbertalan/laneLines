@@ -210,7 +210,12 @@ class Dilate(Mono):
         self.addParent(mono)
         if isinstance(kernel, int):
             kernel = CircleKernel(kernel)
+        else:
+            if isinstance(kernel, np.ndarray):
+                kernel = Constant(kernel)
+        self.kernel = kernel
         self.addParent(kernel)
+        self.parents[-1]._skipForPlot = True
         self.iterations = iterations
 
     @cached
@@ -220,7 +225,7 @@ class Dilate(Mono):
         )
 
     def __str__(self):
-        return 'Dilate %d iterations.' % self.iterations
+        return 'Dilate(iter=%d, ksize=%s)' % (self.iterations, self.kernel.value.shape)
 
 
 class Erode(Mono):
@@ -359,9 +364,6 @@ class ScalarMultiply(Op):
         return self.parent().value * self.scalar
 
 
-
-
-
 class CvtColor(Op):
 
     def __init__(self, image, pairFlag):
@@ -461,8 +463,7 @@ class And(Op, Ellipse):
         return out
 
     def __str__(self):
-        return '%s & %s' % tuple(self.parents)
-
+        return '&'
 
 class Or(Op, Ellipse):
 
@@ -487,6 +488,4 @@ class Or(Op, Ellipse):
         return x1 | x2
 
     def __str__(self):
-        return '%s | %s' % tuple(self.parents)
-
-
+        return '|'

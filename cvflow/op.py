@@ -1,3 +1,4 @@
+import cvflow
 from . import misc
 
 
@@ -142,3 +143,17 @@ class Op:
         if allowSingle and len(out) == 1:
             out = out[0]
         return out
+
+    def __and__(self, other):
+        from cvflow.baseOps import And
+        return And(self, other)
+
+    def __or__(self, other):
+        from cvflow.baseOps import Or
+        return Or(self, other)
+
+    def __neg__(self):
+        return cvflow.baseOps.ScalarMultiply(self, -1)
+
+    def __invert__(self):
+        return cvflow.baseOps.Not(self)

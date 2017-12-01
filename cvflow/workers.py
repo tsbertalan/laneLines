@@ -158,10 +158,13 @@ def transformChessboard(img, nx=9, ny=6):
 
 class CountSeekingThreshold(Boolean):
     
-    def __init__(self, parent, initialThreshold=150, goalCount=10000, countTol=200):
+    def __init__(self, parent, initialThreshold=150, goalCount=10000, countTol=None):
         super().__init__()
         self.threshold = initialThreshold
         self.goalCount = goalCount
+        self._defaultCountTol = 200
+        if countTol is None:
+            countTol = self._defaultCountTol
         self.countTol = countTol
         self.iterationCounts = []
         self.checkType(parent, Mono)
@@ -211,7 +214,11 @@ class CountSeekingThreshold(Boolean):
         return mask
 
     def __str__(self):
-        return 'Count=%d threshold (tol %s; current %s).' % (self.goalCount, self.countTol, self.threshold)
+        paramsText = 'curr=%s' % self.threshold
+        if self.countTol != self._defaultCountTol:
+            paramsText ++ '; tol=%s' % self.countTol
+        return 'Thresh s.t. count=%d (%s)' % (self.goalCount, paramsText)
+
 
 
 class Perspective(Op):

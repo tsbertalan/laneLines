@@ -38,7 +38,7 @@ class DilateSobel(MultistepOp, Boolean):
         self.dmask_pos = GreaterThan(Dilate(self.mask_pos, kernel, iterations=dilationIterations), 0.)
 
         # self.sxbinary = AsBoolean(AsType(And(self.dmask_pos, self.dmask_neg), 'uint8'))
-        self.sxbinary = AsBoolean(And(self.dmask_pos, self.dmask_neg))
+        self.sxbinary = AsBoolean(self.dmask_pos & self.dmask_neg)
 
         if postdilate:
             self.sxbinary = Dilate(self.sxbinary)
@@ -72,10 +72,10 @@ class SobelClip(MultistepOp, Boolean):
         self.wide = Dilate(self.narrow, kernel=10, iterations=5)
         
         # Restricted Sobel-X
-        self.toSobel = And(channel, Not(self.wide))
+        self.toSobel = channel & ~self.wide
 
         self.sobel = DilateSobel(self.toSobel)
-        self.clippedSobel = And(self.sobel, self.narrow)
+        self.clippedSobel = self.sobel & self.narrow
         self.output = self.clippedSobel
 
         self.members =  [self.threshold, self.narrow, self.wide, self.toSobel, self.sobel, self.clippedSobel]
