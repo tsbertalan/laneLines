@@ -4,6 +4,7 @@ from cvflow.workers import *
 from cvflow.misc import cached
 from cvflow.multistep import MultistepOp
 
+
 class DilateSobel(MultistepOp, Boolean):
 
     def __init__(self, singleChannel, postdilate=True, preblurksize=13, sx_thresh=20, dilate_kernel=(2, 4), dilationIterations=3):
@@ -54,7 +55,7 @@ class DilateSobel(MultistepOp, Boolean):
         return self.sxbinary.value
 
 
-class SobelClip(MultistepOp, Op):
+class SobelClip(MultistepOp, Boolean):
 
     def __init__(self, channel, threshold=None):
         super().__init__()

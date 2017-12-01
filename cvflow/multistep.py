@@ -15,6 +15,7 @@ class MultistepOp(Op):
     def input(self, op):
         # Input is not in immediate parents, 
         # since, conceptually, self is the bottom node in this subtree.
+        op.nodeName = 'input'
         self._input = op
 
     @property
@@ -86,7 +87,6 @@ class Pipeline(MultistepOp):
             image = ColorImage(shape=imageShape)
         self.checkType(image, BaseImage), ''
         self.input = image
-        self.input.nodeName = 'input'
 
     @cached
     def value(self):

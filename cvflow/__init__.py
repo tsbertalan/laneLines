@@ -14,7 +14,7 @@ from .multistep import *
 from .compositeOps import *
 
 
-class ComplexPipeline(Pipeline):
+class ComplexPipeline(Pipeline, Boolean):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -41,7 +41,7 @@ class ComplexPipeline(Pipeline):
         self.members = [perspective, blurred, hls, eq, s_channel, clippedSobelS]
 
 
-class SimplePipeline(Pipeline):
+class SimplePipeline(Pipeline, Boolean):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

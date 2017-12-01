@@ -22,7 +22,7 @@ class Lambda(Op):
 class Mono(Op):
 
     def _defaultNodeProperties(self):
-        return dict(color='grey')
+        return dict(color='gray')
     
     @property
     def value(self):
@@ -41,7 +41,7 @@ class AsMono(Mono):
 class Boolean(Mono):
     
     def _defaultNodeProperties(self):
-        return dict(color='grey', style='dashed')
+        return dict(color='gray', style='dashed')
 
 
 class AsBoolean(Boolean):
@@ -68,7 +68,7 @@ class Not(Boolean, Circle):
 class Color(Op):
 
     def _defaultNodeProperties(self):
-        return dict(color='red')
+        return dict(color='blue')
     
     @cached
     def value(self):
@@ -159,12 +159,12 @@ class BaseImage(Op):
 class ColorImage(BaseImage, Color):
     
     def _defaultNodeProperties(self):
-        return dict(shape='box', color='red')
+        return dict(shape='box', color='blue')
 
 
 class MonoImage(BaseImage, Mono):
     
-    node_properties = dict(shape='box', color='grey')
+    node_properties = dict(shape='box', color='gray')
 
 
 class Blur(Op):
@@ -360,25 +360,30 @@ class ScalarMultiply(Op):
 
 
 
-pairFlags = {}
-for name in dir(cv2):
-    if name.startswith('COLOR_'):
-        code = getattr(cv2, name)
-        if code not in pairFlags:
-            pairFlags[code] = name.upper()
-        else:
-            if len(name) < len(pairFlags[code]):
-                pairFlags[code] = name.upper()
 
 
 class CvtColor(Op):
-
-    _pairFlagsCodes = pairFlags
 
     def __init__(self, image, pairFlag):
         super().__init__()
         self.addParent(image)
         self.pairFlag = pairFlag
+
+        pairFlags = {}
+        for name in dir(cv2):
+            if name.startswith('COLOR_'):
+                code = getattr(cv2, name)
+                if code not in pairFlags:
+                    pairFlags[code] = name.upper()
+                else:
+                    if len(name) < len(pairFlags[code]):
+                        pairFlags[code] = name.upper()
+        self.flagName = pairFlags[pairFlag]
+
+        if self.flagName.lower().endswith('gray'):
+            self.node_properties.update(Mono().node_properties)
+        else:
+            self.node_properties.update(Color().node_properties)
 
     @property
     def value(self):
@@ -386,7 +391,7 @@ class CvtColor(Op):
 
     def __str__(self):
         return '%s to %s.' % tuple(
-            self._pairFlagsCodes[self.pairFlag].replace('COLOR_', '').split('2')
+            self.flagName.replace('COLOR_', '').split('2')
         )
 
 

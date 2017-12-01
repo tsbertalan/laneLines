@@ -1,10 +1,19 @@
 from . import misc
 
+
 class Op:
 
+    @property
+    def node_properties(self):
+        if not hasattr(self, '_node_properties'):
+            self._node_properties = {}
+        return self._node_properties
+
+    @node_properties.setter
+    def node_properties(self, newdict):
+        self._node_properties = newdict
+
     def __init__(self):
-        if not hasattr(self, 'node_properties'):
-            self.node_properties = {}
         if hasattr(self, '_defaultNodeProperties'):
             self.node_properties.update(self._defaultNodeProperties())
         self._visited = False
