@@ -74,7 +74,7 @@ class Color(Op):
     def value(self):
         parent = self.parents[0]
         out = parent.value
-        if isinstance(parent, Mono):
+        if parent.isMono:
             out = np.dstack((out, out, out))
         assert len(out.shape) == 3
         return out
@@ -102,12 +102,8 @@ class ColorSplit(Mono):
 
     def __str__(self):
         out = originalOut = 'channel %d' % self.index
-        Target = CvtColor
-        target = self.parent()
-        if not isinstance(target, Target):
-            target = target.parent()
-        if isinstance(target, Target):
-            out = str(target).split()[-1]
+        if isinstance(self.parent(), CvtColor):
+            out = str(self.parent()).split()[-1]
             if out.endswith('.'):
                 out = out[:-1]
             if len(out) != 3 or len(out) <= self.index:
@@ -152,7 +148,7 @@ class BaseImage(Op):
     @value.setter
     def value(self, newimage):
         self.image = newimage
-        if isinstance(self, Mono):
+        if self.isMono:
             assert len(newimage.shape) == 2
         else:
             assert len(newimage.shape) == 3
@@ -445,28 +441,32 @@ class And(Op, Circle):
 
     def __init__(self, parent1, parent2):
         super().__init__()
-        Cls = Mono
-        p1m = isinstance(parent1, Cls)
-        p2m = isinstance(parent2, Cls)
-        assert p1m or p2m, 'Either `%s` or `%s` needs to be `%s`.' % (parent1, parent2, Cls)
+        assert parent1.isMono or parent2.isMono, 'Either `%s` or `%s` needs to be `%s`.' % (parent1, parent2, Cls)
         self.addParent(parent1)
         self.addParent(parent2)
 
     @cached
     def value(self):
         p1, p2 = self.parents
-        if isinstance(p1, Mono) and isinstance(p2, Mono):
+        actualTypes = lambda : 'Attempted (%s & %s)' % tuple([type(p).__name__ for p in (p1, p2)])
+        if p1.isMono and p2.isMono:
             out = p1.value & p2.value
         else:
-            if isinstance(p1, Mono):
-                self.checkType(p2, Color)
+            def chk(mono, color):
+                if not color.isColor:
+                    raise ValueError('%s, but `%s` is Mono, so `%s` must be Color or also Mono.' % (
+                        actualTypes(), mono.getSimpleName(), color.getSimpleName()
+                    ))
+            if p1.isMono:
+                chk(p1, p2)
                 mono = p1
                 color = p2
-            else:
-                self.checkType(p1, Color)
-                self.checkType(p2, Mono)
+            elif p2.isMono:
+                chk(p2, p1)
                 mono = p2
                 color = p1
+            else:
+                raise ValueError('%s, but neither type was Mono.' % actualTypes())
             out = np.copy(color.value)
             out[np.logical_not(mono.value)] = 0
         return out

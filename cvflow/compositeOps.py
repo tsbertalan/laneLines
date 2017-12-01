@@ -57,19 +57,20 @@ class SobelClip(MultistepOp, Boolean):
 
     def __init__(self, channel, threshold=None):
         super().__init__()
+        self.checkType(channel, Mono)
 
         self.input = channel
 
         # Adaptive thresholding of color.
         if threshold is None:
-            threshold = CountSeekingThreshold(AsMono(self.input))
+            threshold = CountSeekingThreshold(self.input)
 
         # Dilated masks of the threshold.
         narrow = Dilate(threshold, kernel=10, iterations=5)
         wide = Dilate(narrow, kernel=10, iterations=5)
         
         # Restricted Sobel-X
-        toSobel = AsMono(self.input) & ~wide
+        toSobel = self.input & ~wide
 
         sobel = DilateSobel(toSobel)
         clippedSobel = sobel & narrow

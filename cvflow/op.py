@@ -150,7 +150,7 @@ class Op:
     def __repr__(self):
         return str(self)
 
-    def getPlotTitleName(self, maxlen=17):
+    def getSimpleName(self, maxlen=17):
         if hasattr(self, 'nodeName'):
             return self.nodeName
 
@@ -161,7 +161,7 @@ class Op:
             self = self.parent()
             out = str(self)
         elif isinstance(self, cvflow.PassThrough):
-            out = '%s (%s)' % (type(self).__name__, self.parent().getPlotTitleName())
+            out = '%s (%s)' % (type(self).__name__, self.parent().getSimpleName())
         else:
             out = str(self)
         
@@ -193,12 +193,12 @@ class Op:
             ]
 
         parentNames = ', '.join([
-            p.getPlotTitleName()
+            p.getSimpleName()
             for p in parents
         ])
         if len(parents) > 1: parentNames = '(%s)' % parentNames
 
-        selfName = self.getPlotTitleName()
+        selfName = self.getSimpleName()
         kwargs.setdefault('title', r'%s %s %s' % (
             parentNames,
             arrow,
@@ -208,10 +208,17 @@ class Op:
 
     def checkType(self, obj, acceptedType, invert=False):
         # Wow it's almost like type-checking is a useful thing to have in a language.
-        if invert:
-            assert not isinstance(obj, acceptedType), '`%s` can\'t be %s for use in `%s`.' % (obj, acceptedType, self)
+        tname = acceptedType.__name__
+        if acceptedType == cvflow.Mono:
+            test = obj.isMono
+        elif acceptedType == cvflow.Color:
+            test = obj.isColor
         else:
-            assert isinstance(obj, acceptedType), '`%s` needs to be %s for use in `%s`.' % (obj, acceptedType, self)
+            test = isinstance(obj, acceptedType)
+        if invert:
+            assert not test, '`%s` can\'t have %s nature for use in `%s`.' % (obj.getSimpleName(), tname, self)
+        else:
+            assert test, '`%s` needs to have %s nature for use in `%s`.' % (obj.getSimpleName(), tname, self)
 
     def getMembersByType(self, Kind, allowSingle=True):
         out = [m for m in self.members if isinstance(m, Kind)]
@@ -232,3 +239,25 @@ class Op:
 
     def __invert__(self):
         return cvflow.baseOps.Not(self)
+
+    @misc.cached
+    def isMono(self):
+        if isinstance(self, cvflow.Mono):
+            return True
+        elif isinstance(self, cvflow.Color):
+            return False
+        elif len(self.parents) > 0:
+            return self.parent().isMono
+        else:
+            return False
+
+    @misc.cached
+    def isColor(self):
+        if isinstance(self, cvflow.Color):
+            return True
+        elif isinstance(self, cvflow.Mono):
+            return False
+        elif len(self.parents) > 0:
+            return self.parent().isColor
+        else:
+            return False
