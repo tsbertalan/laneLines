@@ -19,7 +19,7 @@ class Op:
             self.node_properties.update(self._defaultNodeProperties())
         self._visited = False
         self._includeSelfInMembers = False
-        self._skipForPlot = False
+        self.hidden = False
 
     def invalidateCache(self):
         self.__cache__ = {}
@@ -65,7 +65,7 @@ class Op:
     def child(self, index=0):
         return self.children[index]
 
-    def assembleGraph(self, d=None, currentRecursionDepth=0, format='png'):
+    def assembleGraph(self, d=None, currentRecursionDepth=0, format='png', addKey=True):
         # if isinstance(self, CvtColor):
         #     import utils; utils.bk()
         self._visited = True
@@ -73,12 +73,12 @@ class Op:
         if d is None:
             d = misc.NodeDigraph(format=format)
 
-        if self._skipForPlot:
+        if self.hidden:
             assert len(self.parents) <= 1
         else:
             for parent in self.parents:
                 target = parent
-                while target._skipForPlot:
+                while target.hidden:
                     npar = len(target.parents)
                     if npar == 0:
                         target = None
@@ -97,9 +97,31 @@ class Op:
             if not child._visited:
                 child.assembleGraph(d, currentRecursionDepth+1)
 
-        # Clear the visited flags so subsequent calls will work.
         if currentRecursionDepth == 0:
+            
+            # Clear the visited flags so subsequent calls will work.
             self._clearVisited()
+
+            # Add a key showing the styles of various node classes.
+            if addKey:
+                def nn(Cls, nodeName, *args):
+                    op = Cls(*args)
+                    op.nodeName = nodeName
+                    return op
+
+                dummy = cvflow.Constant(42)
+                dummy.hidden = True
+                keyMembers = [
+                    nn(Op, 'Continuous'),
+                    nn(cvflow.Boolean, 'Binary'),
+                    nn(cvflow.Mono, 'Single channel'),
+                    nn(cvflow.Color, 'Tri-channel'),
+                    nn(cvflow.PassThrough, 'No-op', dummy),
+                    nn(cvflow.MultistepOp, 'multi-step result'),
+                    #nn(cvflow.Constant, 'Constant', 42),
+                ]
+
+                d.add_subgraph(keyMembers, 'KEY', graph_attr=dict(color='gray', label='KEY'))
 
         return d
 
@@ -112,14 +134,14 @@ class Op:
             if parent._visited:
                 parent._clearVisited()
 
-    def draw(self, savePath=None, format='png'):
-        d = self.assembleGraph(format=format)
+    def draw(self, savePath=None, format='png', outType='graphviz', addKey=True):
+        d = self.assembleGraph(format=format, addKey=addKey)
         if savePath is not None:
             if savePath.lower().endswith('.%s' % format.lower()):
                 savePath = savePath[:-4]
             outPath = d._gv.render(savePath)
             print('Saved to %s.' % outPath)
-        return d._gv
+        return dict(graphviz=d._gv, networkx=d._nx, NodeDigraph=d)[outType]
 
     def __str__(self):
         return type(self).__name__

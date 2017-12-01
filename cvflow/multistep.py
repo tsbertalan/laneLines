@@ -4,7 +4,53 @@ from cvflow import Op
 from cvflow.misc import cached
 from cvflow.baseOps import *
 
+class PassThrough(Op, Circle):
+
+    def __init__(self, input):
+        super().__init__()
+        if hasattr(self, '_hidden'):
+            del self._hidden
+        self.addParent(input)
+        self.node_properties['color'] = 'blue'
+
+    @property
+    def value(self):
+        return self.parent().value
+
+    @value.setter
+    def value(self, newimage):
+        self.parent().value = newimage
+
+    @property
+    def shape(self):
+        return self.parent().shape
+
+    def __str__(self):
+        return ''
+
+    @property
+    def hidden(self):
+        if hasattr(self, '_hidden'):
+            return self._hidden
+        else:
+            return len(self.parents) == 1 and len(self.children) == 1
+
+    @hidden.setter
+    def hidden(self, fixedValue):
+        self._hidden = fixedValue
+
+
+class Input(PassThrough): pass
+
+
+class Output(Input): pass
+
+
 class MultistepOp(Op):
+
+    def __init__(self):
+        super().__init__()
+        self.node_properties['shape'] = 'parallelogram'
 
     @property
     def input(self):
@@ -13,10 +59,11 @@ class MultistepOp(Op):
 
     @input.setter
     def input(self, op):
-        # Input is not in immediate parents, 
-        # since, conceptually, self is the bottom node in this subtree.
-        op.nodeName = 'input'
-        self._input = op
+        # Add a No-op so the input only comes in on one line,
+        # even if it's used more than once.
+        input = Input(op)
+        #self.addParent(input)
+        self._input = input
 
     @property
     def output(self):
@@ -25,9 +72,13 @@ class MultistepOp(Op):
 
     @output.setter
     def output(self, op):
-        op.nodeName = 'output'
-        self.addParent(op)
-        self._output = op
+        output = Output(op)
+        self.addParent(output)
+        self._output = output
+
+    @cached
+    def value(self):
+        return self.output.value
 
     def assembleGraph(self, *args, **kwargs):
         # Do the normal graph construction recursion.
@@ -39,12 +90,24 @@ class MultistepOp(Op):
         for k in 'color', 'style':
             if k in self.node_properties:
                 graph_attr[k] = self.node_properties[k]
-        sg = graphviz.Digraph(name='cluster %s' % self, graph_attr=graph_attr)
-        for member in members:
-            sg.node(d._nid(member))
-        d._gv.subgraph(sg)
+        label = d.add_subgraph(members, str(self), graph_attr=graph_attr)
+        if not hasattr(self, 'nodeName'):
+            self.nodeName = label
+            d.add_node(self)
 
         return d
+
+    def includeInMultistep(self, members, hiddenClasses=[Constant,]):
+        out = []
+        for m in members:
+            out.append(m)
+            if not isinstance(m, MultistepOp):
+                out.extend(m.parents)
+        for m in out:
+            for Hidden in hiddenClasses:
+                if isinstance(m, Hidden):
+                    m.hidden = True
+        self.members = out
 
     @property
     def members(self):
@@ -55,21 +118,10 @@ class MultistepOp(Op):
             if self not in members:
                 members.append(self)
 
-        # Add the 'uint8's for Dilate etc.
-        for member in members:
-            
-            # Look at the immediate parents of our first-tier members.
-            for parent in member.parents:
-                if parent is not self.input and parent not in members:
-                    # The first grandparent is a member.
-                    grandparents = parent.parents
-                    if len(grandparents) > 0 and grandparents[0] in members:
-                            members.append(parent)
-                    elif not isinstance(parent, BaseImage):
-                        members.append(parent)
-
         # Remove any nodes explicitly disincluded.
-        members = [m for m in members if not m._skipForPlot and m is not self.input]
+        members.append(self.input)
+        members.append(self.output)
+        members = [m for m in members if not m.hidden]
 
         return members
 
@@ -87,6 +139,8 @@ class Pipeline(MultistepOp):
             image = ColorImage(shape=imageShape)
         self.checkType(image, BaseImage), ''
         self.input = image
+        image.nodeName = 'Input'
+        self.nodeName = 'Output'
 
     @cached
     def value(self):
@@ -111,7 +165,7 @@ class Pipeline(MultistepOp):
         ]
         for c in channels:
             if isinstance(c, Constant):
-                c._skipForPlot = True
+                c.hidden = True
 
         self.colorOutput = ColorJoin(*channels)
         self.colorOutput.nodeName = 'color output'

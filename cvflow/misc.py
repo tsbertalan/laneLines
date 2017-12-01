@@ -24,6 +24,7 @@ class NodeDigraph:
     def __init__(self, format='png'):
         self._gv = graphviz.Digraph(format=format)
         self._nx = networkx.DiGraph()
+        self.subgraphs = {}
 
     def __contains__(self, obj):
         return self._nid(obj) in self._nx
@@ -31,33 +32,47 @@ class NodeDigraph:
     def containsEdge(self, obj1, obj2):
         return (self._nid(obj1), self._nid(obj2)) in self._nx.edges
 
-    def add_node(self, obj):
-        if hasattr(obj, '_skipForPlot') and obj._skipForPlot:
+    def add_subgraph(self, members, baseName, graph_attr={}):
+        baseName = 'cluster %s' % baseName
+        siblings = self.subgraphs.get(baseName, [])
+        l = len(siblings)
+        label = graph_attr.get('label', '')
+        if l > 0:
+            name = '%s%d' % (baseName, l)
+            label += ' %d' % (l+1,)
+            graph_attr['label'] = label
+        else:
+            name = baseName
+        sg = graphviz.Digraph(name=name, graph_attr=graph_attr)
+        for member in members:
+            self.add_node(member, gv=sg)
+        siblings.append((name, sg))
+        self._gv.subgraph(sg)
+        self.subgraphs[baseName] = siblings
+        return label
+
+    def add_node(self, obj, gv=None):
+        if gv is None:
+            gv = self._gv
+        if hasattr(obj, 'hidden') and obj.hidden:
             raise ValueError("Node %s is not supposed to be added to the graph." % obj)
-        if obj in self:
-            return
         kw = {}
         if hasattr(obj, 'node_properties'):
             kw.update(obj.node_properties)
         label = str(obj)
-        if not hasattr(obj, 'nodeName') and isinstance(obj, cvflow.Pipeline):
-            obj.nodeName = 'output'
         if hasattr(obj, 'nodeName'):
-            label = '%s (%s)' % (obj.nodeName, label)
+            label = obj.nodeName
         kw['label'] = label
-        #kw.setdefault('label', str(obj))
         nid = self._nid(obj)
-        self._gv.node(nid, **kw)
         self._nx.add_node(nid)
+        gv.node(nid, **kw)
 
     def _nid(self, obj):
         return ''.join((str(id(obj)) + str(obj)).split())
 
     def add_edge(self, obj1, obj2):
         for o in (obj1, obj2):
-            if o not in self:
-                self.add_node(o)
-
+            self.add_node(o)
         n1 = self._nid(obj1)
         n2 = self._nid(obj2)
         if not self.containsEdge(obj1, obj2):

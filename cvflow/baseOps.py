@@ -35,7 +35,7 @@ class AsMono(Mono):
         super().__init__()
         self.checkType(parent, Color, invert=True)
         self.addParent(parent)
-        self._skipForPlot = True
+        self.hidden = True
 
 
 class Boolean(Mono):
@@ -68,7 +68,7 @@ class Not(Boolean, Circle):
 class Color(Op):
 
     def _defaultNodeProperties(self):
-        return dict(color='blue')
+        return dict(color='red')
     
     @cached
     def value(self):
@@ -85,7 +85,7 @@ class AsColor(Color):
     def __init__(self, parent):
         super().__init__()
         self.addParent(parent)
-        self._skipForPlot = True
+        self.hidden = True
 
 
 class ColorSplit(Mono):
@@ -159,7 +159,7 @@ class BaseImage(Op):
 class ColorImage(BaseImage, Color):
     
     def _defaultNodeProperties(self):
-        return dict(shape='box', color='blue')
+        return dict(shape='box', color='red')
 
 
 class MonoImage(BaseImage, Mono):
@@ -215,7 +215,7 @@ class Dilate(Mono):
                 kernel = Constant(kernel)
         self.kernel = kernel
         self.addParent(kernel)
-        self.parents[-1]._skipForPlot = True
+        self.parents[-1].hidden = True
         self.iterations = iterations
 
     @cached
@@ -331,7 +331,7 @@ class AsType(Op, Circle):
 
     def __init__(self, parent, kind, scaleUintTo255=False):
         super().__init__()
-        self._skipForPlot = True
+        self.hidden = True
         self.addParent(parent)
         self.kind = kind
         self.scaleUintTo255 = scaleUintTo255
@@ -410,8 +410,6 @@ class EqualizeHistogram(Color):
             img[:, :, i] = cv2.equalizeHist(img[:, :, i])
         return img
 
-    # def __str__(self)
-
 
 class Constant(Op):
 
@@ -432,7 +430,7 @@ class Constant(Op):
         return out
 
 
-class And(Op, Ellipse):
+class And(Op, Circle):
 
     def __init__(self, parent1, parent2):
         super().__init__()
@@ -465,7 +463,7 @@ class And(Op, Ellipse):
     def __str__(self):
         return '&'
 
-class Or(Op, Ellipse):
+class Or(Op, Circle):
 
     def __init__(self, parent1, parent2):
         super().__init__()

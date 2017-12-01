@@ -13,46 +13,44 @@ class DilateSobel(MultistepOp, Boolean):
         self.dilate_kernel = dilate_kernel
         self.dilationIterations = dilationIterations
 
+        members = []
+
         self.input = singleChannel
 
         # Add a little *more* blurring.
-        self.blur = Blur(singleChannel, ksize=preblurksize)
-        self.sobelx = Sobel(self.blur, xy='x')
+        blur = Blur(self.input, ksize=preblurksize)
+        sobelx = Sobel(blur, xy='x')
 
         # Sobel mask.
         # mask_neg = AsBoolean(AsType(LessThan(   self.sobelx, -sx_thresh), 'float32'))
         # mask_pos = AsBoolean(AsType(GreaterThan(self.sobelx,  sx_thresh), 'float32'))
-        self.mask_neg = LessThan(   self.sobelx, -sx_thresh)
-        self.mask_pos = GreaterThan(self.sobelx,  sx_thresh)
+        mask_neg = LessThan(   sobelx, -sx_thresh)
+        mask_pos = GreaterThan(sobelx,  sx_thresh)
 
         kernel_midpoint = dilate_kernel[1] // 2
 
         # Dilate mask to the left.
         kernel = np.ones(dilate_kernel, 'uint8')
         kernel[:, 0:kernel_midpoint] = 0
-        self.dmask_neg = GreaterThan(Dilate(self.mask_neg, kernel, iterations=dilationIterations), 0.)
+        dmask_neg = GreaterThan(Dilate(mask_neg, kernel, iterations=dilationIterations), 0.)
 
         # Dilate mask to the right.
         kernel = np.ones(dilate_kernel, 'uint8')
         kernel[:, kernel_midpoint:] = 0
-        self.dmask_pos = GreaterThan(Dilate(self.mask_pos, kernel, iterations=dilationIterations), 0.)
+        dmask_pos = GreaterThan(Dilate(mask_pos, kernel, iterations=dilationIterations), 0.)
 
         # self.sxbinary = AsBoolean(AsType(And(self.dmask_pos, self.dmask_neg), 'uint8'))
-        self.sxbinary = AsBoolean(self.dmask_pos & self.dmask_neg)
+        sxbinary = AsBoolean(dmask_pos & dmask_neg)
+        sxbinary.hidden = True
 
         if postdilate:
-            self.sxbinary = Dilate(self.sxbinary)
+            sxbinary = Dilate(sxbinary)
 
-        self.output = self.sxbinary
+        self.output = sxbinary
 
-        self.members = [
-            self.sobelx, self.mask_neg, self.mask_pos, self.dmask_neg, 
-            self.dmask_pos, self.sxbinary, self.blur
-        ]
-
-    @cached
-    def value(self):
-        return self.sxbinary.value
+        self.includeInMultistep([
+            blur, mask_neg, mask_pos, dmask_pos, dmask_neg, sxbinary, sxbinary.parent().parent()
+        ])
 
 
 class SobelClip(MultistepOp, Boolean):
@@ -64,24 +62,20 @@ class SobelClip(MultistepOp, Boolean):
 
         # Adaptive thresholding of color.
         if threshold is None:
-            threshold = CountSeekingThreshold(channel)
-        self.threshold = threshold
+            threshold = CountSeekingThreshold(AsMono(self.input))
 
         # Dilated masks of the threshold.
-        self.narrow = Dilate(threshold, kernel=10, iterations=5)
-        self.wide = Dilate(self.narrow, kernel=10, iterations=5)
+        narrow = Dilate(threshold, kernel=10, iterations=5)
+        wide = Dilate(narrow, kernel=10, iterations=5)
         
         # Restricted Sobel-X
-        self.toSobel = channel & ~self.wide
+        toSobel = AsMono(self.input) & ~wide
 
-        self.sobel = DilateSobel(self.toSobel)
-        self.clippedSobel = self.sobel & self.narrow
-        self.output = self.clippedSobel
+        sobel = DilateSobel(toSobel)
+        clippedSobel = sobel & narrow
+        
+        self.output = clippedSobel
 
-        self.members =  [self.threshold, self.narrow, self.wide, self.toSobel, self.sobel, self.clippedSobel]
-
-    @cached
-    def value(self):
-        return self.clippedSobel.value
-
-
+        self.includeInMultistep([
+            sobel, threshold, narrow, wide, toSobel, clippedSobel
+        ])

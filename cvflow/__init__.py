@@ -18,8 +18,8 @@ class ComplexPipeline(Pipeline, Boolean):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-
-        perspective = Perspective(self.input)
+        undistort = Undistort(self.input)
+        perspective = Perspective(undistort)
         blurred = Blur(perspective)
         hls = AsColor(CvtColor(blurred, cv2.COLOR_RGB2HLS))
         eq = EqualizeHistogram(blurred)
@@ -44,18 +44,21 @@ class ComplexPipeline(Pipeline, Boolean):
         L = Dilate(clippedSobelL)
 
         self.output = S | L
-
         self.constructColorOutpout('zeros', L, S)
-        self.members = [
-            perspective, blurred, 
-            hls, eq, s_channel, l_channel,
-            hlseq, bseq_channel, 
-            lab, labaeq_channel, blabbeq_channel,
-            labbeqmask,
-            clippedSobelS, S,
-            clippedSobelL, L,
+
+        self.includeInMultistep([
+            clippedSobelL, clippedSobelS,
+            undistort, perspective,
+            hls, lab, hlseq,
+            blurred, 
+            eq, s_channel, l_channel,
+            bseq_channel, 
+            labaeq_channel, blabbeq_channel, blabbeq_channel.parent(),
+            labbeqmask, labbeqmask.parent(),
+            S,
+            L,
             self.output,
-        ]
+        ])
 
 
 class SimplePipeline(Pipeline, Boolean):
@@ -71,6 +74,10 @@ class SimplePipeline(Pipeline, Boolean):
         l_binary = CountSeekingThreshold(l_channel)
         s_binary = CountSeekingThreshold(s_channel)
         markings_binary = l_binary | s_binary
+        
         self.output = markings_binary
         self.constructColorOutpout('zeros', l_binary, s_binary)
-        self.members = [perspective, blurred, hls, l_channel, s_channel, l_binary, s_binary, markings_binary]
+
+        self.includeInMultistep([
+            perspective, blurred, hls, l_channel, s_channel, l_binary, s_binary, markings_binary
+        ])
