@@ -169,7 +169,7 @@ class Op:
                     nn(Op, 'Continuous'),
                     nn(cvflow.Boolean, 'Binary'),
                     nn(cvflow.Mono, 'Single channel'),
-                    nn(cvflow.Color, 'Tri-channel'),
+                    nn(cvflow.Color, 'Three channel'),
                     nn(cvflow.PassThrough, 'No-op', dummy),
                     nn(cvflow.MultistepOp, 'multi-step result'),
                     nn(L, 'Logical')
@@ -321,16 +321,16 @@ class Op:
     @Prop(disimplied=['isMono', 'isBoolean'], shape='box3d')
     def isColor(self): pass
     
-    @Prop(implied=['isMono'], style='dashed')
+    @Prop(implied=['isMono'], fontname='italic', color='gray', )
     def isBoolean(self): pass
 
-    @Prop(color='orange')
+    @Prop(style='dashed')
     def isLogical(self): pass
 
     @Prop(shape='none')
     def isPassThrough(self): pass
 
-    @Prop(fontname='italic')
+    @Prop(fontname='bold')
     def isMultistepOp(self): pass
 
     def assertProp(self, checkee, **kwargs):
