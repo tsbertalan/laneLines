@@ -247,12 +247,11 @@ class Op:
         if savePath is not None:
             if savePath.lower().endswith('.%s' % format.lower()):
                 savePath = savePath[:-4]
+            graphObjects = [d._gv]
+            fpaths = [savePath]
             if splitSubgraphs:
-                graphObjects, nxobjs = d.subgraphs
-                fpaths = [savePath + str(k) for k in range(len(graphObjects))]
-            else:
-                graphObjects = [d._gv]
-                fpaths = [savePath]
+                graphObjects.extend(d.subgraphs[0])
+                fpaths.extend([savePath + str(k) for k in range(len(graphObjects))])
             for graph, path in zip(graphObjects, fpaths):
                 outPath = graph.render(path)
                 print('Saved to %s.' % outPath)
