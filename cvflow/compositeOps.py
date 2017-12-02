@@ -69,7 +69,7 @@ class SobelClip(MultistepOp, Boolean):
         wide = Dilate(narrow, kernel=10, iterations=5)
         
         # Restricted Sobel-X
-        toSobel = self.input & ~wide
+        toSobel = self.input & wide
         toSobel.isMono = True
 
         sobel = DilateSobel(toSobel)
