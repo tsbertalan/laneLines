@@ -8,10 +8,10 @@ from cvflow.misc import cached, Circle, Box, Ellipse
 class Lambda(Op):
 
     def __init__(self, f, *args):
-        super().__init__()
         for arg in args:
             self.addParent(arg)
         self.f = f
+        super().__init__()
 
     @cached
     def value(self):
@@ -20,56 +20,31 @@ class Lambda(Op):
 
 
 class Mono(Op):
-
-    def _defaultNodeProperties(self):
-        return dict(color='gray')
     
-    @property
-    def value(self):
-        return self.parent().value
-
-
-class AsMono(Mono):
-
-    def __init__(self, parent):
-        super().__init__()
-        self.checkType(parent, Color, invert=True)
-        self.addParent(parent)
-        self.hidden = True
+    def _defaultNodeProperties(self):
+        return dict(shape='box')
 
 
 class Boolean(Mono):
     
     def _defaultNodeProperties(self):
-        return dict(color='gray', style='dashed')
+        out = super()._defaultNodeProperties()
+        out.update(dict(style='dashed'))
+        return out
 
 
 class AsBoolean(Boolean):
 
     def __init__(self, parent):
-        super().__init__()
         self.addParent(parent)
-
-
-class Not(Boolean, Circle):
-
-    def __init__(self, parent):
         super().__init__()
-        self.addParent(parent)
-
-    @property
-    def value(self):
-        return np.logical_not(self.parent().value)
-
-    def __str__(self):
-        return '!(%s)' % self.parent()
 
 
 class Color(Op):
 
     def _defaultNodeProperties(self):
-        return dict(color='red')
-    
+        return dict(shape='box3d')
+
     @cached
     def value(self):
         parent = self.parents[0]
@@ -80,21 +55,13 @@ class Color(Op):
         return out
 
 
-class AsColor(Color):
-
-    def __init__(self, parent):
-        super().__init__()
-        self.addParent(parent)
-        self.hidden = True
-
-
 class ColorSplit(Mono):
 
     def __init__(self, color, index):
-        super().__init__()
         self.index = index
-        self.checkType(color, Color)
         self.addParent(color)
+        self.checkType(color, Color)
+        super().__init__()
 
     @property
     def value(self):
@@ -116,10 +83,10 @@ class ColorSplit(Mono):
 class ColorJoin(Color):
 
     def __init__(self, *channels):
-        super().__init__()
         for ch in channels:
-            #self.checkType(ch, Mono)
+            self.checkType(ch, Mono)
             self.addParent(ch)
+        super().__init__()
 
     @property
     def value(self):
@@ -131,12 +98,9 @@ class ColorJoin(Color):
 
 class BaseImage(Op):
 
-    def _defaultNodeProperties(self):
-        return dict(shape='box')
-
     def __init__(self, shape=(720, 1280)):
-        super().__init__()
         self.shape = shape
+        super().__init__()
 
     @property
     def value(self):
@@ -157,22 +121,21 @@ class BaseImage(Op):
 
 class ColorImage(BaseImage, Color):
     
-    def _defaultNodeProperties(self):
-        return dict(shape='box', color='red')
+    pass
 
 
 class MonoImage(BaseImage, Mono):
     
-    node_properties = dict(shape='box', color='gray')
+    pass
 
 
 class Blur(Op):
 
     def __init__(self, parent, ksize=5):
-        super().__init__()
         self.addParent(parent)
         assert ksize % 2
         self.ksize = ksize
+        super().__init__()
 
     @cached
     def value(self):
@@ -185,9 +148,9 @@ class Blur(Op):
 class CircleKernel(Mono):
 
     def __init__(self, ksize, falloff=3):
-        super().__init__()
         self.ksize = ksize
         self.falloff = falloff
+        super().__init__()
 
     @cached
     def value(self):
@@ -202,20 +165,20 @@ class CircleKernel(Mono):
 class Dilate(Mono):
 
     def __init__(self, mono, kernel=5, iterations=1):
-        super().__init__()
         self.checkType(mono, Mono)
         mono = AsType(mono, 'uint8')
-
         self.addParent(mono)
         if isinstance(kernel, int):
             kernel = CircleKernel(kernel)
         else:
             if isinstance(kernel, np.ndarray):
                 kernel = Constant(kernel)
-        self.kernel = kernel
         self.addParent(kernel)
+
+        self.kernel = kernel
         self.parents[-1].hidden = True
         self.iterations = iterations
+        super().__init__()
 
     @cached
     def value(self):
@@ -230,13 +193,13 @@ class Dilate(Mono):
 class Erode(Mono):
 
     def __init__(self, parent, kernel=None, iterations=1):
-        super().__init__()
         self.checkType(parent, Mono)
         self.addParent(parent)
         if kernel is None:
             kerenel = CircleKernel(5)
         self.addParent(kernel)
         self.iterations = iterations
+        super().__init__()
 
     @cached
     def value(self):
@@ -248,14 +211,13 @@ class Erode(Mono):
 class Opening(Mono):
 
     def __init__(self, parent, kernel=None, iterations=1):
-        super().__init__()
         self.checkType(parent, Mono)
         self.addParent(parent)
         if kernel is None:
             kerenel = CircleKernel(5)
         self.addParent(kernel)
+        super().__init__()
         self.iterations = iterations
-        self.mono = True
 
     @cached
     def value(self):
@@ -267,9 +229,9 @@ class Opening(Mono):
 class Sobel(Op):
 
     def __init__(self, channel, xy='x'):
-        super().__init__()
-        self.xy = xy
         self.addParent(channel)
+        self.xy = xy
+        super().__init__()
 
     @cached
     def value(self):
@@ -288,10 +250,10 @@ class Sobel(Op):
 class _ElementwiseInequality(Boolean):
 
     def __init__(self, left, right, orEqualTo=False):
-        super().__init__()
         self.addParent(left)
         self.addParent(right)
         self.orEqualTo = orEqualTo
+        super().__init__()
 
     def __str__(self):
         eq = ''
@@ -329,11 +291,11 @@ class GreaterThan(_ElementwiseInequality):
 class AsType(Op, Circle):
 
     def __init__(self, parent, kind, scaleUintTo255=False):
-        super().__init__()
         self.hidden = True
         self.addParent(parent)
         self.kind = kind
         self.scaleUintTo255 = scaleUintTo255
+        super().__init__()
 
     @cached
     def value(self):
@@ -354,9 +316,9 @@ class AsType(Op, Circle):
 class ScalarMultiply(Op):
 
     def __init__(self, parent, scalar):
-        super().__init__()
         self.addParent(parent)
         self.scalar = scalar
+        super().__init__()
 
     @cached
     def value(self):
@@ -366,7 +328,6 @@ class ScalarMultiply(Op):
 class CvtColor(Op):
 
     def __init__(self, image, pairFlag):
-        super().__init__()
         self.addParent(image)
         self.pairFlag = pairFlag
 
@@ -382,9 +343,15 @@ class CvtColor(Op):
         self.flagName = pairFlags[pairFlag]
 
         if self.flagName.lower().endswith('gray'):
+            self.isMono = True
+            self.isColor = False
             self.node_properties.update(Mono().node_properties)
         else:
+            self.isMono = False
+            self.isColor = True
             self.node_properties.update(Color().node_properties)
+
+        super().__init__()
 
     @property
     def value(self):
@@ -399,8 +366,8 @@ class CvtColor(Op):
 class EqualizeHistogram(Color):
 
     def __init__(self, image):
-        super().__init__()
         self.addParent(image)
+        super().__init__()
 
     @cached
     def value(self):
@@ -416,8 +383,8 @@ class Constant(Op):
         return dict(style='dotted')
 
     def __init__(self, theConstant):
-        super().__init__()
         self.theConstant = theConstant
+        super().__init__()
 
     @property
     def shape(self):
@@ -437,13 +404,33 @@ class Constant(Op):
         return out
 
 
-class And(Op, Circle):
+class Logical:
+
+    pass
+
+
+class Not(Boolean, Logical):
+
+    def __init__(self, parent):
+        self.addParent(parent)
+        super().__init__()
+
+    @property
+    def value(self):
+        return np.logical_not(self.parent().value)
+
+    def __str__(self):
+        return '!(%s)' % self.parent()
+
+
+class And(Op, Logical):
 
     def __init__(self, parent1, parent2):
-        super().__init__()
-        assert parent1.isMono or parent2.isMono, 'Either `%s` or `%s` needs to be `%s`.' % (parent1, parent2, Cls)
         self.addParent(parent1)
         self.addParent(parent2)
+        assert parent1.isMono or parent2.isMono, 'Either `%s` or `%s` needs to be `%s`.' % (parent1, parent2, Cls)
+        if parent1.isMono and parent2.isMon
+        super().__init__()
 
     @cached
     def value(self):
@@ -474,12 +461,13 @@ class And(Op, Circle):
     def __str__(self):
         return '&'
 
-class Or(Op, Circle):
+
+class Or(Op, Logical):
 
     def __init__(self, parent1, parent2):
-        super().__init__()
         self.addParent(parent1)
         self.addParent(parent2)
+        super().__init__()
 
     @cached
     def value(self):

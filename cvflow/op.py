@@ -6,11 +6,23 @@ from . import misc
 class Op:
 
     def __init__(self):
-        if hasattr(self, '_defaultNodeProperties'):
-            self.node_properties.update(self._defaultNodeProperties())
-        self._visited = False
-        self._includeSelfInMembers = False
-        self.hidden = False
+        """
+
+        In subclasses where this constructor is called as `super().__init__()`, 
+        that call should come *after* the subclass is done initializting
+        (especially setting its parents)
+        """
+        # Starting from the top of the MRO, accumulate node properties.
+        for Cls in type(self).mro()[::-1]:
+            if hasattr(Cls, '_defaultNodeProperties'):
+                self.node_properties.update(Cls._defaultNodeProperties(self))
+        if self.isMono and not isinstance(self, cvflow.Mono):
+            self.node_properties.update(cvflow.Mono().node_properties)
+        elif self.isColor and not isinstance(self, cvflow.Color):
+            self.node_properties.update(cvflow.Color().node_properties)
+        for key in ('_visited', '_includeSelfInMembers', 'hidden'):
+            if not hasattr(self, key):
+                setattr(self, key, False)
 
     @property
     def node_properties(self):
@@ -61,10 +73,16 @@ class Op:
         raise NotImplementedError
 
     def parent(self, index=0):
-        return self.parents[index]
+        try:
+            return self.parents[index]
+        except IndexError:
+            raise IndexError('%s object has <= %d parents.' % (type(self).__name__, index))
 
     def child(self, index=0):
-        return self.children[index]
+        try:
+            return self.children[index]
+        except IndexError:
+            raise IndexError('%s object has <= %d children.' % (type(self).__name__, index))
 
     def assembleGraph(self, d=None, currentRecursionDepth=0, format='png', addKey=True):
         # if isinstance(self, CvtColor):
@@ -112,6 +130,7 @@ class Op:
 
                 dummy = cvflow.baseOps.Constant(42)
                 dummy.hidden = True
+                class L(Op, cvflow.Logical): pass
                 keyMembers = [
                     nn(Op, 'Continuous'),
                     nn(cvflow.Boolean, 'Binary'),
@@ -119,6 +138,7 @@ class Op:
                     nn(cvflow.Color, 'Tri-channel'),
                     nn(cvflow.PassThrough, 'No-op', dummy),
                     nn(cvflow.MultistepOp, 'multi-step result'),
+                    nn(L, 'Logical')
                     #nn(cvflow.Constant, 'Constant', 42),
                 ]
 
@@ -150,16 +170,29 @@ class Op:
     def __repr__(self):
         return str(self)
 
+    @property
+    def nodeName(self):
+        if hasattr(self, '_nodeName'):
+            if isinstance(self._nodeName, str):
+                return self._nodeName
+            else:
+                try:
+                    return self._nodeName()
+                except TypeError:
+                    return str(self._nodeName)
+        else:
+            return None
+
+    @nodeName.setter
+    def nodeName(self, _nodeName):
+        self._nodeName = _nodeName
+
     def getSimpleName(self, maxlen=17):
-        if hasattr(self, 'nodeName'):
+        if self.nodeName is not None:
             return self.nodeName
 
-        if isinstance(self, (
-            #cvflow.PassThrough, 
-            cvflow.AsType, cvflow.AsMono, cvflow.AsColor
-            )) and len(self.parents) == 1:
-            self = self.parent()
-            out = str(self)
+        if isinstance(self, cvflow.AsType) and len(self.parents) == 1:
+            out = str(self.parent())
         elif isinstance(self, cvflow.PassThrough):
             out = '%s (%s)' % (type(self).__name__, self.parent().getSimpleName())
         else:
@@ -176,7 +209,7 @@ class Op:
 
     def showValue(self, showMultistepParents=True, **kwargs):
         excludedParentTypes = [cvflow.Constant, cvflow.CircleKernel]
-        skipPastParentTypes = [cvflow.AsMono, cvflow.AsColor, cvflow.AsType]
+        skipPastParentTypes = [cvflow.AsType]
 
         if isinstance(self, cvflow.MultistepOp):
             parents = [self.input]
@@ -240,24 +273,54 @@ class Op:
     def __invert__(self):
         return cvflow.baseOps.Not(self)
 
-    @misc.cached
+    @property
     def isMono(self):
-        if isinstance(self, cvflow.Mono):
-            return True
-        elif isinstance(self, cvflow.Color):
-            return False
-        elif len(self.parents) > 0:
-            return self.parent().isMono
-        else:
-            return False
+        if hasattr(self, '_isMono'):
+            return self._isMono
 
-    @misc.cached
-    def isColor(self):
-        if isinstance(self, cvflow.Color):
-            return True
-        elif isinstance(self, cvflow.Mono):
-            return False
+        if isinstance(self, cvflow.Constant):
+            x = self.theConstant
+            return isinstance(x, np.ndarray) and len(x.shape) == 2
+
+        if isinstance(self, cvflow.Mono):
+            out = True
+        elif isinstance(self, cvflow.Color):
+            out = False
         elif len(self.parents) > 0:
-            return self.parent().isColor
+            out = self.parent().isMono
         else:
-            return False
+            out = False
+        self._isMono = out
+
+        return out
+
+    @isMono.setter
+    def isMono(self, setValue):
+        self._isMono = setValue
+
+    @property
+    def isColor(self):
+        if hasattr(self, '_isColor'):
+            return self._isColor
+
+        if isinstance(self, cvflow.Constant):
+            x = self.theConstant
+            return isinstance(x, np.ndarray) and len(x.shape) == 3 and x.shape[-1] == 3
+
+        if isinstance(self, cvflow.Mono):
+            out = False
+        elif isinstance(self, cvflow.Color):
+            out = True
+        elif len(self.parents) > 0:
+            out = self.parent().isColor
+        else:
+            out = False
+        self._isColor = out
+
+        return out
+
+    @isColor.setter
+    def isColor(self, setValue):
+        self._isMono = setValue
+
+

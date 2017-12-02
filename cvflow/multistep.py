@@ -8,11 +8,11 @@ from cvflow.baseOps import *
 class PassThrough(Op, Circle):
 
     def __init__(self, input):
-        super().__init__()
+        self.addParent(input)
         if hasattr(self, '_hidden'):
             del self._hidden
-        self.addParent(input)
-        self.node_properties['color'] = 'blue'
+        self.node_properties['shape'] = 'none'
+        super().__init__()
 
     @property
     def value(self):
@@ -50,8 +50,8 @@ class Output(Input): pass
 class MultistepOp(Op):
 
     def __init__(self):
-        super().__init__()
         self.node_properties['shape'] = 'parallelogram'
+        super().__init__()
 
     @property
     def input(self):
@@ -62,8 +62,11 @@ class MultistepOp(Op):
     def input(self, op):
         # Add a No-op so the input only comes in on one line,
         # even if it's used more than once.
+        name = op.getSimpleName()
+        op.nodeName = '%s (input to %s)' % (name, self.getSimpleName())
+        op.node_properties['color'] = 'blue'
         input = Input(op)
-        #self.addParent(input)
+        input.nodeName = 'Input (%s)' % name
         self._input = input
 
     @property
@@ -73,7 +76,10 @@ class MultistepOp(Op):
 
     @output.setter
     def output(self, op):
+        name = op.getSimpleName()
+        op.nodeName = lambda : '%s (output from %s)' % (name, self.getSimpleName())
         output = Output(op)
+        output.nodeName = 'Output (%s)' % name
         self.addParent(output)
         self._output = output
 
@@ -92,7 +98,7 @@ class MultistepOp(Op):
             if k in self.node_properties:
                 graph_attr[k] = self.node_properties[k]
         label = d.add_subgraph(members, str(self), graph_attr=graph_attr)
-        if not hasattr(self, 'nodeName'):
+        if self.nodeName is None:
             self.nodeName = label
             d.add_node(self)
 
@@ -119,12 +125,18 @@ class MultistepOp(Op):
             if self not in members:
                 members.append(self)
 
-        # Remove any nodes explicitly disincluded.
+        # Specifically include the guards.
         members.append(self.input)
         members.append(self.output)
+
+        # And of course the output's input.
+        members.append(self.output.parent())
+
+        # Remove any nodes explicitly disincluded.
         members = [m for m in members if not m.hidden]
 
-        return list(set(members))
+        # Remove duplicates and return an unsorted list.
+        return set(members)
 
     @members.setter
     def members(self, newmembers):
@@ -171,14 +183,18 @@ class MultistepOp(Op):
 
         for op, ax in zip(which, axes):
             op.showValue(ax=ax, **kwargs)
+
             if isinstance(op, MultistepOp):
                 color = _getColor()
                 multistepColors[op] = color
-                ax.title.set_color(color)
                 for side in 'left', 'right', 'top', 'bottom':
                     ax.spines[side].set_color(color)
                     ax.spines[side].set_linewidth(4)
                 ax.set_frame_on(True)
+
+            if len(op.children) == 1 and isinstance(op.child(), cvflow.Output):
+                ax.title.set_color(titleColor)
+
             if titleSize is not None:
                 ax.title.set_fontsize(titleSize)
 
@@ -187,7 +203,7 @@ class MultistepOp(Op):
             #fig.frameon(True)
             fig.patch.set_edgecolor(titleColor)
             fig.patch.set_linewidth(4)
-        fig.suptitle(str(self) if not hasattr(self, 'nodeName') else self.nodeName, color=titleColor)
+        fig.suptitle(str(self) if self.nodeName is None else self.nodeName, color=titleColor)
         shown = [fig]
 
         if showMultistepParents:
@@ -203,13 +219,18 @@ class MultistepOp(Op):
 class Pipeline(MultistepOp):
 
     def __init__(self, image=None, imageShape=(720, 1280)):
-        super().__init__()
+        """
+
+        In subclasses where this constructor is called as `super(**kwargs).__init__()`, 
+        that call should come *after* the subclass is done initializting
+        (so `self.input` gets set). Subclasses should not call `self.addParent(op)`.
+        """
         if image is None:
             image = ColorImage(shape=imageShape)
         self.checkType(image, BaseImage), ''
         self.input = image
-        image.nodeName = 'Input'
-        self.nodeName = 'Output'
+        self.nodeName = 'Pipeline output'
+        super().__init__()
 
     @cached
     def value(self):
@@ -237,5 +258,5 @@ class Pipeline(MultistepOp):
                 c.hidden = True
 
         self.colorOutput = ColorJoin(*channels)
-        self.colorOutput.nodeName = 'color output'
+        self.colorOutput.nodeName = 'Color pipeline output'
         self.members = [self.colorOutput]

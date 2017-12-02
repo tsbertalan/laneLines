@@ -159,7 +159,6 @@ def transformChessboard(img, nx=9, ny=6):
 class CountSeekingThreshold(Boolean):
     
     def __init__(self, parent, initialThreshold=150, goalCount=10000, countTol=None):
-        super().__init__()
         self.threshold = initialThreshold
         self.goalCount = goalCount
         self._defaultCountTol = 200
@@ -169,6 +168,7 @@ class CountSeekingThreshold(Boolean):
         self.iterationCounts = []
         self.checkType(parent, Mono)
         self.addParent(parent)
+        super().__init__()
         
     @cached
     def value(self):
@@ -220,13 +220,12 @@ class CountSeekingThreshold(Boolean):
         return 'Thresh s.t. count=%d (%s)' % (self.goalCount, paramsText)
 
 
-
 class Perspective(Op):
 
     def __init__(self, undistorted, **kwargs):
-        super().__init__()
         self.addParent(undistorted)
         self.perspectiveTransformer = PerspectiveTransformer(**kwargs)
+        super().__init__()
 
     @cached
     def value(self):
@@ -236,9 +235,9 @@ class Perspective(Op):
 class Undistort(Op):
 
     def __init__(self, camera, imgs=None, fit=True, **kwargs):
-        super().__init__()
         self.addParent(camera)
         self.undistortTransformer = UndistortTransformer(**kwargs)
+        super().__init__()
 
         if fit:
             self.undistortTransformer.fit(imgs)

@@ -21,17 +21,17 @@ class ComplexPipeline(Pipeline, Boolean):
         undistort = Undistort(self.input)
         perspective = Perspective(undistort)
         blurred = Blur(perspective)
-        hls = AsColor(CvtColor(blurred, cv2.COLOR_RGB2HLS))
-        eq = EqualizeHistogram(blurred)
+        hls = CvtColor(blurred, cv2.COLOR_RGB2HLS)
         l_channel = ColorSplit(hls, 1)
         s_channel = ColorSplit(hls, 2)
 
-        hlseq = AsColor(CvtColor(eq, cv2.COLOR_RGB2HLS))
+        eq = EqualizeHistogram(blurred)
+        hlseq = CvtColor(eq, cv2.COLOR_RGB2HLS)
         bseq_channel = Blur(ColorSplit(hlseq, 2), 71)
 
-        lab = AsColor(CvtColor(eq, cv2.COLOR_RGB2LAB))
+        lab = CvtColor(eq, cv2.COLOR_RGB2LAB)
         labaeq_channel = ColorSplit(lab, 1)
-        blabbeq_channel = AsMono(Blur(ColorSplit(lab, 2), 71))
+        blabbeq_channel = Blur(ColorSplit(lab, 2), 71)
 
         clippedSobelS = SobelClip(s_channel)
 
@@ -57,7 +57,6 @@ class ComplexPipeline(Pipeline, Boolean):
             labbeqmask, labbeqmask.parent(),
             S,
             L,
-            self.output,
         ])
 
 
@@ -68,13 +67,13 @@ class SimplePipeline(Pipeline, Boolean):
         undistort = Undistort(self.input)
         perspective = Perspective(undistort)
         blurred = Blur(perspective)
-        hls = AsColor(CvtColor(blurred, cv2.COLOR_RGB2HLS))
+        hls = CvtColor(blurred, cv2.COLOR_RGB2HLS)
         l_channel = ColorSplit(hls, 1)
         s_channel = ColorSplit(hls, 2)
         l_binary = CountSeekingThreshold(l_channel)
         s_binary = CountSeekingThreshold(s_channel)
         markings_binary = l_binary | s_binary
-        
+
         self.output = markings_binary
         self.constructColorOutpout('zeros', l_binary, s_binary)
 

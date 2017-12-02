@@ -8,7 +8,6 @@ from cvflow.multistep import MultistepOp
 class DilateSobel(MultistepOp, Boolean):
 
     def __init__(self, singleChannel, postdilate=True, preblurksize=13, sx_thresh=20, dilate_kernel=(2, 4), dilationIterations=3):
-        super().__init__()
         self.sx_thresh = sx_thresh
         self.dilate_kernel = dilate_kernel
         self.dilationIterations = dilationIterations
@@ -51,12 +50,12 @@ class DilateSobel(MultistepOp, Boolean):
         self.includeInMultistep([
             blur, mask_neg, mask_pos, dmask_pos, dmask_neg, sxbinary, sxbinary.parent().parent()
         ])
+        super().__init__()
 
 
 class SobelClip(MultistepOp, Boolean):
 
     def __init__(self, channel, threshold=None):
-        super().__init__()
         self.checkType(channel, Mono)
 
         self.input = channel
@@ -80,3 +79,4 @@ class SobelClip(MultistepOp, Boolean):
         self.includeInMultistep([
             sobel, threshold, narrow, wide, toSobel, clippedSobel
         ])
+        super().__init__()

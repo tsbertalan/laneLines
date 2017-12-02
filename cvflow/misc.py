@@ -62,7 +62,7 @@ class NodeDigraph:
         if hasattr(obj, 'node_properties'):
             kw.update(obj.node_properties)
         label = str(obj)
-        if hasattr(obj, 'nodeName'):
+        if obj.nodeName is not None:
             label = obj.nodeName
         kw['label'] = label
         nid = self._nid(obj)
@@ -153,3 +153,4 @@ def axesGrid(count, fromsquare=True, preferTall=True, clearTicks=False, **subplo
             ax.set_yticks([])
 
     return axes
+
