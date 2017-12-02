@@ -31,12 +31,12 @@ class DilateSobel(MultistepOp, Boolean):
         # Dilate mask to the left.
         kernel = np.ones(dilate_kernel, 'uint8')
         kernel[:, 0:kernel_midpoint] = 0
-        dmask_neg = GreaterThan(Dilate(mask_neg, kernel, iterations=dilationIterations), 0.)
+        dmask_neg = Dilate(mask_neg, kernel, iterations=dilationIterations)
 
         # Dilate mask to the right.
         kernel = np.ones(dilate_kernel, 'uint8')
         kernel[:, kernel_midpoint:] = 0
-        dmask_pos = GreaterThan(Dilate(mask_pos, kernel, iterations=dilationIterations), 0.)
+        dmask_pos = Dilate(mask_pos, kernel, iterations=dilationIterations)
 
         # self.sxbinary = AsBoolean(AsType(And(self.dmask_pos, self.dmask_neg), 'uint8'))
         sxbinary = dmask_pos & dmask_neg
