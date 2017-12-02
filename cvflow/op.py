@@ -70,7 +70,7 @@ class Op:
 
     @misc.cached
     def value(self):
-        raise NotImplementedError
+        raise NotImplementedError('`self.value` not implemented for class %s.' % type(self).__name__)
 
     def parent(self, index=0):
         try:
@@ -238,20 +238,6 @@ class Op:
             selfName, 
         ))
         return misc.show(self.value, **kwargs)
-
-    def checkType(self, obj, acceptedType, invert=False):
-        # Wow it's almost like type-checking is a useful thing to have in a language.
-        tname = acceptedType.__name__
-        if acceptedType == cvflow.Mono:
-            test = obj.isMono
-        elif acceptedType == cvflow.Color:
-            test = obj.isColor
-        else:
-            test = isinstance(obj, acceptedType)
-        if invert:
-            assert not test, '`%s` can\'t have %s nature for use in `%s`.' % (obj.getSimpleName(), tname, self)
-        else:
-            assert test, '`%s` needs to have %s nature for use in `%s`.' % (obj.getSimpleName(), tname, self)
 
     def getMembersByType(self, Kind, allowSingle=True):
         out = [m for m in self.members if isinstance(m, Kind)]

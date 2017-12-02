@@ -227,7 +227,6 @@ class Pipeline(MultistepOp):
         """
         if image is None:
             image = ColorImage(shape=imageShape)
-        self.checkType(image, BaseImage), ''
         self.input = image
         self.nodeName = 'Pipeline output'
         super().__init__()

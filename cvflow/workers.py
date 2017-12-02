@@ -166,7 +166,6 @@ class CountSeekingThreshold(Boolean):
             countTol = self._defaultCountTol
         self.countTol = countTol
         self.iterationCounts = []
-        self.checkType(parent, Mono)
         self.addParent(parent)
         super().__init__()
         

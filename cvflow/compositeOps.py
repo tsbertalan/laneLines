@@ -56,7 +56,6 @@ class DilateSobel(MultistepOp, Boolean):
 class SobelClip(MultistepOp, Boolean):
 
     def __init__(self, channel, threshold=None):
-        self.checkType(channel, Mono)
 
         self.input = channel
 

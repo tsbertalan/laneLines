@@ -39,6 +39,10 @@ class AsBoolean(Boolean):
         self.addParent(parent)
         super().__init__()
 
+    @property
+    def value(self):
+        return self.parent().value
+
 
 class Color(Op):
 
@@ -60,7 +64,6 @@ class ColorSplit(Mono):
     def __init__(self, color, index):
         self.index = index
         self.addParent(color)
-        self.checkType(color, Color)
         super().__init__()
 
     @property
@@ -84,7 +87,6 @@ class ColorJoin(Color):
 
     def __init__(self, *channels):
         for ch in channels:
-            self.checkType(ch, Mono)
             self.addParent(ch)
         super().__init__()
 
@@ -165,7 +167,6 @@ class CircleKernel(Mono):
 class Dilate(Mono):
 
     def __init__(self, mono, kernel=5, iterations=1):
-        self.checkType(mono, Mono)
         mono = AsType(mono, 'uint8')
         self.addParent(mono)
         if isinstance(kernel, int):
@@ -193,7 +194,6 @@ class Dilate(Mono):
 class Erode(Mono):
 
     def __init__(self, parent, kernel=None, iterations=1):
-        self.checkType(parent, Mono)
         self.addParent(parent)
         if kernel is None:
             kerenel = CircleKernel(5)
@@ -211,7 +211,6 @@ class Erode(Mono):
 class Opening(Mono):
 
     def __init__(self, parent, kernel=None, iterations=1):
-        self.checkType(parent, Mono)
         self.addParent(parent)
         if kernel is None:
             kerenel = CircleKernel(5)
@@ -428,8 +427,6 @@ class And(Op, Logical):
     def __init__(self, parent1, parent2):
         self.addParent(parent1)
         self.addParent(parent2)
-        assert parent1.isMono or parent2.isMono, 'Either `%s` or `%s` needs to be `%s`.' % (parent1, parent2, Cls)
-        if parent1.isMono and parent2.isMon
         super().__init__()
 
     @cached
