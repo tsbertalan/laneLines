@@ -11,10 +11,10 @@ class DilateSobel(MultistepOp, Boolean):
         self.sx_thresh = sx_thresh
         self.dilate_kernel = dilate_kernel
         self.dilationIterations = dilationIterations
-
-        members = []
-
+        self.assertProp(singleChannel, isMono=True)
         self.input = singleChannel
+
+
 
         # Add a little *more* blurring.
         blur = Blur(self.input, ksize=preblurksize)
@@ -39,8 +39,8 @@ class DilateSobel(MultistepOp, Boolean):
         dmask_pos = GreaterThan(Dilate(mask_pos, kernel, iterations=dilationIterations), 0.)
 
         # self.sxbinary = AsBoolean(AsType(And(self.dmask_pos, self.dmask_neg), 'uint8'))
-        sxbinary = AsBoolean(dmask_pos & dmask_neg)
-        sxbinary.hidden = True
+        sxbinary = dmask_pos & dmask_neg
+        sxbinary.isBinary = True
 
         if postdilate:
             sxbinary = Dilate(sxbinary)
@@ -57,6 +57,7 @@ class SobelClip(MultistepOp, Boolean):
 
     def __init__(self, channel, threshold=None):
 
+        self.assertProp(channel, isMono=True)
         self.input = channel
 
         # Adaptive thresholding of color.
@@ -69,6 +70,7 @@ class SobelClip(MultistepOp, Boolean):
         
         # Restricted Sobel-X
         toSobel = self.input & ~wide
+        toSobel.isMono = True
 
         sobel = DilateSobel(toSobel)
         clippedSobel = sobel & narrow

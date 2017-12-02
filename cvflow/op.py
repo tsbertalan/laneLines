@@ -1,6 +1,45 @@
+from functools import wraps
 import numpy as np
 import cvflow
 from . import misc
+
+
+class Prop:
+    
+    def __init__(self, implied=None, disimplied=None, **defaultNodeProperties):
+        self.implied = implied
+        self.disimplied = disimplied
+        self.defaultNodeProperties = defaultNodeProperties
+        
+    def __call__(self, method):
+        propName = '_%s' % method.__name__
+        @property
+        def get(innerSelf):
+            return getattr(innerSelf, propName, False)
+        @get.setter
+        def get(innerSelf, setValue):
+            
+            # Set the value itself.
+            setattr(innerSelf, propName, setValue)
+            
+            # Set or unset the associated properties.
+            if setValue:
+                innerSelf._traits[propName] = dict(**self.defaultNodeProperties)
+            else:
+                innerSelf._traits.pop(propName, None)
+                
+            # Flip implied/disimplied flags.
+            if self.implied is not None:
+                for imp in self.implied.split():
+                    if getattr(innerSelf, imp) != setValue:
+                        setattr(innerSelf, imp, setValue)
+            if self.disimplied is not None:
+                for dimp in self.disimplied.split():
+                    if getattr(innerSelf, dimp) == setValue:
+                        setattr(innerSelf, dimp, not setValue)
+            setattr(innerSelf, propName, setValue)
+            
+        return get
 
 
 class Op:
@@ -16,23 +55,9 @@ class Op:
         for Cls in type(self).mro()[::-1]:
             if hasattr(Cls, '_defaultNodeProperties'):
                 self.node_properties.update(Cls._defaultNodeProperties(self))
-        if self.isMono and not isinstance(self, cvflow.Mono):
-            self.node_properties.update(cvflow.Mono().node_properties)
-        elif self.isColor and not isinstance(self, cvflow.Color):
-            self.node_properties.update(cvflow.Color().node_properties)
         for key in ('_visited', '_includeSelfInMembers', 'hidden'):
             if not hasattr(self, key):
                 setattr(self, key, False)
-
-    @property
-    def node_properties(self):
-        if not hasattr(self, '_node_properties'):
-            self._node_properties = {}
-        return self._node_properties
-
-    @node_properties.setter
-    def node_properties(self, newdict):
-        self._node_properties = newdict
 
     def invalidateCache(self):
         self.__cache__ = {}
@@ -103,7 +128,7 @@ class Op:
                         target = None
                         break
                     else:
-                        assert npar == 1, '%s does not have 1 parent.' % target
+                        assert npar == 1, '%s has hidden=%s, but does not have 1 parent.' % (target, target.hidden)
                         target = target.parent()
                 if target is not None:
                     d.add_edge(target, self)
@@ -130,7 +155,7 @@ class Op:
 
                 dummy = cvflow.baseOps.Constant(42)
                 dummy.hidden = True
-                class L(Op, cvflow.Logical): pass
+                class L(cvflow.Logical): pass
                 keyMembers = [
                     nn(Op, 'Continuous'),
                     nn(cvflow.Boolean, 'Binary'),
@@ -260,53 +285,43 @@ class Op:
         return cvflow.baseOps.Not(self)
 
     @property
-    def isMono(self):
-        if hasattr(self, '_isMono'):
-            return self._isMono
-
-        if isinstance(self, cvflow.Constant):
-            x = self.theConstant
-            return isinstance(x, np.ndarray) and len(x.shape) == 2
-
-        if isinstance(self, cvflow.Mono):
-            out = True
-        elif isinstance(self, cvflow.Color):
-            out = False
-        elif len(self.parents) > 0:
-            out = self.parent().isMono
-        else:
-            out = False
-        self._isMono = out
-
-        return out
-
-    @isMono.setter
-    def isMono(self, setValue):
-        self._isMono = setValue
-
+    def _traits(self):
+        k = '_Op__traits'
+        setattr(self, k, getattr(self, k, {}))
+        return getattr(self, k)
+    
     @property
-    def isColor(self):
-        if hasattr(self, '_isColor'):
-            return self._isColor
-
-        if isinstance(self, cvflow.Constant):
-            x = self.theConstant
-            return isinstance(x, np.ndarray) and len(x.shape) == 3 and x.shape[-1] == 3
-
-        if isinstance(self, cvflow.Mono):
-            out = False
-        elif isinstance(self, cvflow.Color):
-            out = True
-        elif len(self.parents) > 0:
-            out = self.parent().isColor
-        else:
-            out = False
-        self._isColor = out
-
+    def node_properties(self):
+        out = {}
+        for d in self._traits.values():
+            out.update(d)
         return out
 
-    @isColor.setter
-    def isColor(self, setValue):
-        self._isMono = setValue
+    @Prop(disimplied='isColor', shape='box')
+    def isMono(self): pass
+    
+    @Prop(disimplied='isMono isBoolean', shape='box3d')
+    def isColor(self): pass
+    
+    @Prop(implied='isMono', style='dashed')
+    def isBoolean(self): pass
+
+    @Prop(color='orange')
+    def isLogical(self): pass
+
+    def assertProp(self, checkee, **kwargs):
+        """
+        Use like 
+        >>> checker.assertProp(checkee, isMono=True)
+        """
+        assert len(kwargs) == 1, 'One kwarg should be passed to check!'
+        propName = list(kwargs.keys())[0]
+        propTarget = kwargs[propName]
+        test = getattr(checkee, propName) == propTarget
+        if not test:
+            raise AssertionError('%s.%s on "%s" is not %s in %s.' % (
+                type(checkee).__name__, propName, checkee.getSimpleName(), 
+                propTarget, self.getSimpleName()
+            ))
 
 

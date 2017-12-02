@@ -153,4 +153,3 @@ def axesGrid(count, fromsquare=True, preferTall=True, clearTicks=False, **subplo
             ax.set_yticks([])
 
     return axes
-

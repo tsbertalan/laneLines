@@ -20,43 +20,31 @@ class Lambda(Op):
 
 
 class Mono(Op):
-    
-    def _defaultNodeProperties(self):
-        return dict(shape='box')
 
+    def __init__(self):
+        self.isMono = True
+        super().__init__()
+    
 
 class Boolean(Mono):
-    
-    def _defaultNodeProperties(self):
-        out = super()._defaultNodeProperties()
-        out.update(dict(style='dashed'))
-        return out
 
-
-class AsBoolean(Boolean):
-
-    def __init__(self, parent):
-        self.addParent(parent)
+    def __init__(self):
+        self.isBoolean = True
         super().__init__()
-
-    @property
-    def value(self):
-        return self.parent().value
-
+    
 
 class Color(Op):
 
-    def _defaultNodeProperties(self):
-        return dict(shape='box3d')
+    def __init__(self):
+        self.isColor = True
+        super().__init__()
 
-    @cached
-    def value(self):
-        parent = self.parents[0]
-        out = parent.value
-        if parent.isMono:
-            out = np.dstack((out, out, out))
-        assert len(out.shape) == 3
-        return out
+
+class Logical(Op):
+
+    def __init__(self):
+        self.isLogical = True
+        super().__init__()  
 
 
 class ColorSplit(Mono):
@@ -121,14 +109,18 @@ class BaseImage(Op):
         self.invalidateCache()
 
 
-class ColorImage(BaseImage, Color):
+class ColorImage(BaseImage):
     
-    pass
+    def __init__(self, **kwargs):
+        self.isColor = True
+        super().__init__(**kwargs)
 
 
-class MonoImage(BaseImage, Mono):
+class MonoImage(BaseImage):
     
-    pass
+    def __init__(self, **kwargs):
+        self.isMono = True
+        super().__init__(**kwargs)
 
 
 class Blur(Op):
@@ -403,16 +395,12 @@ class Constant(Op):
         return out
 
 
-class Logical:
-
-    pass
-
-
-class Not(Boolean, Logical):
+class Not(Logical):
 
     def __init__(self, parent):
         self.addParent(parent)
         super().__init__()
+        self.isBoolean = True
 
     @property
     def value(self):
@@ -422,17 +410,30 @@ class Not(Boolean, Logical):
         return '!(%s)' % self.parent()
 
 
-class And(Op, Logical):
+class And(Logical):
 
-    def __init__(self, parent1, parent2):
-        self.addParent(parent1)
-        self.addParent(parent2)
+    def __init__(self, p1, p2):
+        self.addParent(p1)
+        self.addParent(p2)
+        if not (
+            (p1.isMono and p2.isMono)
+            or (p1.isColor and p2.isMono)
+            or (p2.isColor and p1.isMono)
+            ):
+
+            n = lambda p: type(p).__name__
+            msg = 'Attempted (%s & %s) with' % tuple([n(p) for p in (p1, p2)])
+            for p in (p1, p2):
+                for attr in 'isMono', 'isColor':
+                    got = getattr(p, attr)
+                    if got:
+                        msg += ' %s.%s = %s' % (n(p), attr, got)
+            raise AssertionError(msg + '.')
         super().__init__()
 
     @cached
     def value(self):
         p1, p2 = self.parents
-        actualTypes = lambda : 'Attempted (%s & %s)' % tuple([type(p).__name__ for p in (p1, p2)])
         if p1.isMono and p2.isMono:
             out = p1.value & p2.value
         else:
@@ -459,7 +460,7 @@ class And(Op, Logical):
         return '&'
 
 
-class Or(Op, Logical):
+class Or(Logical):
 
     def __init__(self, parent1, parent2):
         self.addParent(parent1)

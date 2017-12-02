@@ -12,6 +12,8 @@ class PassThrough(Op, Circle):
         if hasattr(self, '_hidden'):
             del self._hidden
         self.node_properties['shape'] = 'none'
+        for attr in 'isMono', 'isColor', 'isBoolean':
+            setattr(self, attr, getattr(input, attr))
         super().__init__()
 
     @property
