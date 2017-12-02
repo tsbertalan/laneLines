@@ -4,6 +4,20 @@ import cv2
 from cvflow import Op
 from cvflow.misc import cached
 
+def stringFallback(naive):
+    def wrapped(self):
+        try:
+            out = naive(self)
+        except:
+            out = str(type(self))
+        return out
+    return wrapped
+
+
+class Static:
+
+    pass
+
 
 class Lambda(Op):
 
@@ -58,6 +72,7 @@ class ColorSplit(Mono):
     def value(self):
         return self.parent().value[:, :, self.index]
 
+    @stringFallback
     def __str__(self):
         out = originalOut = 'channel %d' % self.index
         if isinstance(self.parent(), CvtColor):
@@ -125,7 +140,7 @@ class MonoImage(BaseImage):
 
 class Blur(Op):
 
-    def __init__(self, parent, ksize=5):
+    def __init__(self, parent, ksize=5, **kwargs):
         self.addParent(parent)
         assert ksize % 2
         self.ksize = ksize
@@ -136,13 +151,14 @@ class Blur(Op):
     def value(self):
         return cv2.GaussianBlur(self.parent().value, (self.ksize, self.ksize), 0)
 
+    @stringFallback
     def __str__(self):
         return '%dx%d Gaussian blur' % (self.ksize, self.ksize)
 
 
-class CircleKernel(Mono):
+class CircleKernel(Mono, Static):
 
-    def __init__(self, ksize, falloff=3):
+    def __init__(self, ksize, falloff=3, **kwargs):
         self.ksize = ksize
         self.falloff = falloff
         super().__init__(**kwargs)
@@ -153,13 +169,14 @@ class CircleKernel(Mono):
         kernel = (kernel * kernel.T > kernel.min() / self.falloff).astype('uint8')
         return kernel
 
+    @stringFallback
     def __str__(self):
         return 'O kernel(%d, %s)' % (self.ksize, self.falloff)
 
 
 class Dilate(Mono):
 
-    def __init__(self, mono, kernel=5, iterations=1):
+    def __init__(self, mono, kernel=5, iterations=1, **kwargs):
         mono = AsType(mono, 'uint8')
         self.addParent(mono)
         if isinstance(kernel, int):
@@ -180,13 +197,14 @@ class Dilate(Mono):
             self.parent(0).value, self.parent(1).value, iterations=self.iterations,
         )
 
+    @stringFallback
     def __str__(self):
         return 'Dilate(iter=%d, ksize=%s)' % (self.iterations, self.kernel.value.shape)
 
 
 class Erode(Mono):
 
-    def __init__(self, parent, kernel=None, iterations=1):
+    def __init__(self, parent, kernel=None, iterations=1, **kwargs):
         self.addParent(parent)
         if kernel is None:
             kerenel = CircleKernel(5)
@@ -203,7 +221,7 @@ class Erode(Mono):
 
 class Opening(Mono):
 
-    def __init__(self, parent, kernel=None, iterations=1):
+    def __init__(self, parent, kernel=None, iterations=1, **kwargs):
         self.iterations = iterations
         self.addParent(parent)
         if kernel is None:
@@ -220,7 +238,7 @@ class Opening(Mono):
 
 class Sobel(Op):
 
-    def __init__(self, channel, xy='x'):
+    def __init__(self, channel, xy='x', **kwargs):
         self.addParent(channel)
         self.xy = xy
         super().__init__(**kwargs)
@@ -235,18 +253,20 @@ class Sobel(Op):
             xy = (0, 1)
         return cv2.Sobel(self.parent().value, cv2.CV_64F, *xy)
 
+    @stringFallback
     def __str__(self):
         return 'Sobel in %s direction.' % self.xy
 
 
 class _ElementwiseInequality(Boolean):
 
-    def __init__(self, left, right, orEqualTo=False):
+    def __init__(self, left, right, orEqualTo=False, **kwargs):
         self.addParent(left)
         self.addParent(right)
         self.orEqualTo = orEqualTo
         super().__init__(**kwargs)
 
+    @stringFallback
     def __str__(self):
         eq = ''
         if self.orEqualTo:
@@ -279,10 +299,28 @@ class GreaterThan(_ElementwiseInequality):
         else:
             return left.value > right.value
 
+class EqualTo(Boolean):
+
+    baseSymbol = '=='
+
+    def __init__(self, left, right, orEqualTo=False, **kwargs):
+        self.addParent(left)
+        self.addParent(right)
+        super().__init__(**kwargs)
+
+    @stringFallback
+    def __str__(self):
+        return '%s %s %s' % (self.parents[0], self.baseSymbol, self.parents[1])
+
+    @cached
+    def value(self):
+        left, right = self.parents
+        return left.value == right.value
+
 
 class AsType(Op):
 
-    def __init__(self, parent, kind, scaleUintTo255=False):
+    def __init__(self, parent, kind, scaleUintTo255=False, **kwargs):
         self.hidden = True
         self.addParent(parent)
         self.kind = kind
@@ -302,13 +340,14 @@ class AsType(Op):
                 inarray *= 255
         return inarray.astype(self.kind)
 
+    @stringFallback
     def __str__(self):
         return str(self.kind)
 
 
 class ScalarMultiply(Op):
 
-    def __init__(self, parent, scalar):
+    def __init__(self, parent, scalar, **kwargs):
         self.addParent(parent)
         self.scalar = scalar
         super().__init__(**kwargs)
@@ -320,7 +359,7 @@ class ScalarMultiply(Op):
 
 class CvtColor(Op):
 
-    def __init__(self, image, pairFlag):
+    def __init__(self, image, pairFlag, **kwargs):
         self.addParent(image)
         self.pairFlag = pairFlag
 
@@ -350,6 +389,7 @@ class CvtColor(Op):
     def value(self):
         return cv2.cvtColor(self.parent().value, self.pairFlag)
 
+    @stringFallback
     def __str__(self):
         return '%s to %s.' % tuple(
             self.flagName.replace('COLOR_', '').split('2')
@@ -358,7 +398,7 @@ class CvtColor(Op):
 
 class EqualizeHistogram(Color):
 
-    def __init__(self, image):
+    def __init__(self, image, **kwargs):
         self.addParent(image)
         super().__init__(**kwargs)
 
@@ -370,7 +410,7 @@ class EqualizeHistogram(Color):
         return img
 
 
-class Constant(Op):
+class Constant(Op, Static):
 
     def __init__(self, theConstant, **kwargs):
         self.theConstant = theConstant
@@ -386,6 +426,7 @@ class Constant(Op):
     def value(self):
         return self.theConstant
 
+    @stringFallback
     def __str__(self):
         if isinstance(self.theConstant, np.ndarray):
             what = 'ndarray'
@@ -407,6 +448,7 @@ class Not(Logical):
     def value(self):
         return np.logical_not(self.parent().value)
 
+    @stringFallback
     def __str__(self):
         return '!(%s)' % self.parent()
 
@@ -457,6 +499,7 @@ class And(Logical):
             out[np.logical_not(mono.value)] = 0
         return out
 
+    @stringFallback
     def __str__(self):
         return '&'
 
@@ -483,5 +526,6 @@ class Or(Logical):
 
         return x1 | x2
 
+    @stringFallback
     def __str__(self):
         return '|'

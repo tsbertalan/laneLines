@@ -145,6 +145,9 @@ class MultistepOp(Op):
         if not hasattr(self, '_members'): self._members = []
         self._members.extend(newmembers)
 
+    def getMembersByType(self, Kind):
+        return [m for m in self.members if isinstance(m, Kind)]
+
     @property
     def toposortMembers(self):
         toposort = self.assembleGraph().toposort()
@@ -230,7 +233,7 @@ class Pipeline(MultistepOp):
             image = ColorImage(shape=imageShape)
         self.input = image
         self.nodeName = 'Pipeline output'
-        super().__init__(d=image._nodeDigraph, **kwargs)
+        super().__init__(**kwargs)
 
     @cached
     def value(self):

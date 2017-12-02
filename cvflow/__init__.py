@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 import networkx, graphviz
 
-from .op import Op
+from .op import *
 from . import misc
 from . import baseOps
 from . import workers

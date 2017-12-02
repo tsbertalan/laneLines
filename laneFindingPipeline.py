@@ -671,7 +671,7 @@ class LaneFinder(object):
         
         # Function for applying various color/Sobel thresholds.
         self.colorFilter = colorFilter
-        self.perspective = self.colorFilter.getMembersByType(cf.workers.Perspective).perspectiveTransformer
+        self.perspective = self.colorFilter.getMembersByType(cf.workers.Perspective)[0].perspectiveTransformer
         #self.undistort   = self.colorFilter.getMembersByType(cf.workers.Undistort  ).undistortTransformer
         
         # Function for marking discovery.

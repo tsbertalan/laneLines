@@ -45,6 +45,19 @@ class Prop:
         return get
 
 
+def constantOrOp(obj):
+    if not isinstance(obj, Op):
+        from cvflow.baseOps import Constant
+        obj = Constant(obj)
+    return obj
+
+
+def constantOrOpInput(method):
+    def wrapped(self, input, *args, **kwargs):
+        return method(self, constantOrOp(input), *args, **kwargs)
+    return wrapped
+
+
 class Op:
 
     def __init__(self):
@@ -92,9 +105,7 @@ class Op:
         addParent < super() < isMono
         to be the overriding order.
         """
-        if not isinstance(parent, Op):
-            from cvflow.baseOps import Constant
-            parent = Constant(parent)
+        parent = constantOrOp(parent)
         if parent not in self.parents:
             self.parents.append(parent)
         if self not in parent.children:
@@ -242,7 +253,6 @@ class Op:
         return out
 
     def showValue(self, showMultistepParents=True, **kwargs):
-        excludedParentTypes = [cvflow.Constant, cvflow.CircleKernel]
         skipPastParentTypes = [cvflow.AsType]
 
         if isinstance(self, cvflow.MultistepOp):
@@ -252,7 +262,7 @@ class Op:
             arrow = r'$\rightarrow$'
             parents = [
                 p for p in self.parents 
-                if type(p) not in excludedParentTypes
+                if not isinstance(p, cvflow.Static)
             ]
             parents = [
                 p.parent() if type(p) in skipPastParentTypes and len(p.parents) > 0 else p
@@ -273,16 +283,12 @@ class Op:
         ))
         return misc.show(self.value, **kwargs)
 
-    def getMembersByType(self, Kind, allowSingle=True):
-        out = [m for m in self.members if isinstance(m, Kind)]
-        if allowSingle and len(out) == 1:
-            out = out[0]
-        return out
-
+    @constantOrOpInput
     def __and__(self, other):
         from cvflow.baseOps import And
         return And(self, other)
 
+    @constantOrOpInput
     def __or__(self, other):
         from cvflow.baseOps import Or
         return Or(self, other)
@@ -292,6 +298,22 @@ class Op:
 
     def __invert__(self):
         return cvflow.baseOps.Not(self)
+
+    @constantOrOpInput
+    def __lt__(self, other):
+        return cvflow.baseOps.LessThan(self, other)
+
+    @constantOrOpInput
+    def __le__(self, other):
+        return cvflow.baseOps.LessThan(self, other, orEqualTo=True)
+
+    @constantOrOpInput
+    def __gt__(self, other):
+        return cvflow.baseOps.GreaterThan(self, other)
+
+    @constantOrOpInput
+    def __ge__(self, other):
+        return cvflow.baseOps.GreaterThan(self, other, orEqualTo=True)
 
     @property
     def _traits(self):
