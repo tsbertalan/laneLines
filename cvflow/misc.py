@@ -25,7 +25,7 @@ class NodeDigraph:
     def __init__(self, format='png'):
         self._gv = graphviz.Digraph(format=format)
         self._nx = networkx.DiGraph()
-        self.subgraphs = {}
+        self._subgraphs = {}
         self.nodes = {}
 
     def __contains__(self, obj):
@@ -34,9 +34,15 @@ class NodeDigraph:
     def containsEdge(self, obj1, obj2):
         return (self._nid(obj1), self._nid(obj2)) in self._nx.edges
 
+    @property
+    def subgraphs(self):
+        gvs = sum([[y[1] for y in x] for x in self._subgraphs.values()], [])
+        nxs = sum([[y[2] for y in x] for x in self._subgraphs.values()], [])
+        return gvs, nxs
+
     def add_subgraph(self, members, baseName, graph_attr={}):
         baseName = 'cluster %s' % baseName
-        siblings = self.subgraphs.get(baseName, [])
+        siblings = self._subgraphs.get(baseName, [])
         l = len(siblings)
         label = graph_attr.get('label', '')
         if l > 0:
@@ -45,19 +51,27 @@ class NodeDigraph:
             graph_attr['label'] = label
         else:
             name = baseName
-        sg = graphviz.Digraph(name=name, graph_attr=graph_attr)
+        gv = graphviz.Digraph(name=name, format=self._gv.format, graph_attr=dict(graph_attr))
+        graph_attr.pop('label', None)
+        gvd = graphviz.Digraph(name=name, format=self._gv.format, graph_attr=dict(graph_attr))
+        nx = networkx.DiGraph()
         for member in members:
-            self.add_node(member, gv=sg)
-        siblings.append((name, sg))
-        self._gv.subgraph(sg)
-        self.subgraphs[baseName] = siblings
+            self.add_node(member, gvnx=(gv, nx))
+            kw = self.getKw(member)
+            n1 = self._nid(member)
+            gvd.node(n1, **kw)
+            self.add_node(member, gvnx=(gvd, nx))
+            for child in members:
+                if self.containsEdge(member, child):
+                    n2 = self._nid(child)
+                    gvd.edge(n1, n2)
+        siblings.append((name, gvd, nx))
+        self._gv.subgraph(gv)
+        self._subgraphs[baseName] = siblings
         return label
 
-    def add_node(self, obj, gv=None):
-        if gv is None:
-            gv = self._gv
-        if hasattr(obj, 'hidden') and obj.hidden:
-            raise ValueError("Node %s is not supposed to be added to the graph." % obj)
+    def getKw(self, obj):
+        # Assemble the styling properties.
         kw = {}
         if hasattr(obj, 'node_properties'):
             kw.update(obj.node_properties)
@@ -65,20 +79,42 @@ class NodeDigraph:
         if obj.nodeName is not None:
             label = obj.nodeName
         kw['label'] = label
+        return kw
+
+    def add_node(self, obj, gvnx=None):
+        # Maybe fill subgraphs?
+        if gvnx is None:
+            gv = self._gv
+            nx = self._nx
+        else:
+            gv, nx = gvnx
+
+        if hasattr(obj, 'hidden') and obj.hidden:
+            raise ValueError("Node %s is not supposed to be added to the graph." % obj)
+
+        kw = self.getKw(obj)
+
+        # Inser the node by its NID.
         nid = self._nid(obj)
-        self._nx.add_node(nid)
+        nx.add_node(nid)
         gv.node(nid, **kw)
+
         self.nodes[nid] = obj
 
     def _nid(self, obj):
         return ''.join((str(id(obj)) + str(obj)).split())
 
-    def add_edge(self, obj1, obj2):
+    def add_edge(self, obj1, obj2, gvnx=None):
+        if gvnx is None:
+            gv = self._gv
+            nx = self._nx
+        else:
+            gv, nx = gvnx
         for o in (obj1, obj2):
-            self.add_node(o)
+            self.add_node(o, gvnx=gvnx)
         n1 = self._nid(obj1)
         n2 = self._nid(obj2)
-        if not self.containsEdge(obj1, obj2):
+        if gvnx is not None or not self.containsEdge(obj1, obj2):
             self._gv.edge(n1, n2)
             self._nx.add_edge(n1, n2)
 

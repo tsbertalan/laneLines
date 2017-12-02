@@ -242,12 +242,20 @@ class Op:
                 parent._clearVisited()
 
     def draw(self, savePath=None, format='png', outType='graphviz', addKey=True, linkMultisteps=False):
+        splitSubgraphs = not linkMultisteps
         d = self.assembleGraph(format=format, addKey=addKey, linkMultisteps=linkMultisteps)
         if savePath is not None:
             if savePath.lower().endswith('.%s' % format.lower()):
                 savePath = savePath[:-4]
-            outPath = d._gv.render(savePath)
-            print('Saved to %s.' % outPath)
+            if splitSubgraphs:
+                graphObjects, nxobjs = d.subgraphs
+                fpaths = [savePath + str(k) for k in range(len(graphObjects))]
+            else:
+                graphObjects = [d._gv]
+                fpaths = [savePath]
+            for graph, path in zip(graphObjects, fpaths):
+                outPath = graph.render(path)
+                print('Saved to %s.' % outPath)
         return dict(graphviz=d._gv, networkx=d._nx, NodeDigraph=d)[outType]
 
     def __str__(self):
