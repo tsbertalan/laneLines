@@ -65,10 +65,12 @@ class MultistepOp(Op):
         # Add a No-op so the input only comes in on one line,
         # even if it's used more than once.
         name = op.getSimpleName()
-        op.nodeName = '%s (input to %s)' % (name, self.getSimpleName())
+        op.nodeName = '%s (to %s)' % (name, self.getSimpleName())
         op.node_properties['color'] = 'blue'
         input = Input(op)
-        input.nodeName = 'Input (%s)' % name
+        input.nodeName = 'Input to %s (%s).' % (self.getSimpleName(), name)
+        if not isinstance(self, Pipeline):
+            self.addParent(op)
         self._input = input
 
     @property
@@ -79,9 +81,10 @@ class MultistepOp(Op):
     @output.setter
     def output(self, op):
         name = op.getSimpleName()
-        op.nodeName = lambda : '%s (output from %s)' % (name, self.getSimpleName())
+        op.nodeName = lambda : 'Output from %s: %s' % (self.getSimpleName(), name)
         output = Output(op)
-        output.nodeName = 'Output (%s)' % name
+        output.nodeName = lambda : 'Output %s from %s.' % (name, self.getSimpleName())
+        output.hidden = True
         self.addParent(output)
         self._output = output
 
@@ -231,8 +234,9 @@ class Pipeline(MultistepOp):
         """
         if image is None:
             image = ColorImage(shape=imageShape)
+        image.hidden = True
         self.input = image
-        self.nodeName = 'Pipeline output'
+        # self.nodeName = 'Pipeline output'
         super().__init__(**kwargs)
 
     @cached

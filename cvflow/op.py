@@ -131,7 +131,45 @@ class Op:
         except IndexError:
             raise IndexError('%s object has <= %d children.' % (type(self).__name__, index))
 
-    def assembleGraph(self, d=None, currentRecursionDepth=0, format='png', addKey=True):
+    def walk(self, currentRecursionDepth=0, which=['parents', 'children'], excludeSelf=False):
+        self._visited = True
+        if not excludeSelf:
+            yield self
+        for k in which:
+            l = dict(parents=self.parents, children=self.children)[k]
+            for op in l:
+                if not op._visited:
+                    for op in op.walk(currentRecursionDepth=currentRecursionDepth+1):
+                        yield op
+        if currentRecursionDepth == 0:
+            self._clearVisited()
+
+    def getAncestors(self):
+        for op in self.walk(self, which=['parents'], excludeSelf=True):
+            yield op
+
+    def getDescendants(self):
+        for op in self.walk(which=['children'], excludeSelf=True):
+            yield op
+
+    def getRoot(self):
+        roots = [root for root in self.getRoots(includeStatic=False)]
+        assert len(roots) == 1, (roots, self)
+        return list(roots)[0]
+
+    # @generatorOrList
+    def getRoots(self, includeStatic=False):
+        for op in self.walk():
+            if (includeStatic or not isinstance(op, cvflow.Static)) and len(op.parents) == 0:
+                yield op
+
+    # @generatorOrList
+    def getByKind(self, Kind):
+        for op in self.walk:
+            if isinstance(op, Kind):
+                yield op
+
+    def assembleGraph(self, d=None, currentRecursionDepth=0, format='png', addKey=True, linkMultisteps=False):
         self._visited = True
 
         if d is None:
@@ -139,27 +177,30 @@ class Op:
 
         if self.hidden:
             assert len(self.parents) <= 1
-        else:
+        elif linkMultisteps or type(self) is not cvflow.Input:
             for parent in self.parents:
-                target = parent
-                while target.hidden:
-                    npar = len(target.parents)
+                parent = parent
+                while parent.hidden and (linkMultisteps or not isinstance(parent, cvflow.Output)):
+                    npar = len(parent.parents)
                     if npar == 0:
-                        target = None
+                        parent = None
                         break
                     else:
                         assert npar == 1, '%s has hidden=%s, but does not have 1 parent.' % (target, target.hidden)
-                        target = target.parent()
-                if target is not None:
-                    d.add_edge(target, self)
+                        parent = parent.parent()
+                if (
+                    parent is not None
+                    and (linkMultisteps or type(parent) is not cvflow.Output)
+                    ):
+                    d.add_edge(parent, self)
 
         for parent in self.parents:
             if not parent._visited:
-                parent.assembleGraph(d, currentRecursionDepth+1)
+                parent.assembleGraph(d, currentRecursionDepth+1, linkMultisteps=linkMultisteps)
 
         for child in self.children:
             if not child._visited:
-                child.assembleGraph(d, currentRecursionDepth+1)
+                child.assembleGraph(d, currentRecursionDepth+1, linkMultisteps=linkMultisteps)
 
         if currentRecursionDepth == 0:
             
@@ -200,8 +241,8 @@ class Op:
             if parent._visited:
                 parent._clearVisited()
 
-    def draw(self, savePath=None, format='png', outType='graphviz', addKey=True):
-        d = self.assembleGraph(format=format, addKey=addKey)
+    def draw(self, savePath=None, format='png', outType='graphviz', addKey=True, linkMultisteps=False):
+        d = self.assembleGraph(format=format, addKey=addKey, linkMultisteps=linkMultisteps)
         if savePath is not None:
             if savePath.lower().endswith('.%s' % format.lower()):
                 savePath = savePath[:-4]
@@ -239,7 +280,7 @@ class Op:
         if isinstance(self, cvflow.AsType) and len(self.parents) == 1:
             out = str(self.parent())
         elif isinstance(self, cvflow.PassThrough):
-            out = '%s (%s)' % (type(self).__name__, self.parent().getSimpleName())
+            out = '%s (from %s)' % (type(self).__name__, self.parent().getSimpleName())
         else:
             out = str(self)
         
