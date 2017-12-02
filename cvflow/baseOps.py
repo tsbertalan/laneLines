@@ -130,6 +130,7 @@ class Blur(Op):
         assert ksize % 2
         self.ksize = ksize
         super().__init__()
+        self.isBoolean = False
 
     @cached
     def value(self):
@@ -203,12 +204,12 @@ class Erode(Mono):
 class Opening(Mono):
 
     def __init__(self, parent, kernel=None, iterations=1):
+        self.iterations = iterations
         self.addParent(parent)
         if kernel is None:
             kerenel = CircleKernel(5)
         self.addParent(kernel)
         super().__init__()
-        self.iterations = iterations
 
     @cached
     def value(self):
@@ -286,8 +287,8 @@ class AsType(Op):
         self.addParent(parent)
         self.kind = kind
         self.scaleUintTo255 = scaleUintTo255
-        self.node_properties['shape'] = 'circle'
         super().__init__()
+        self.node_properties['shape'] = 'circle'
 
     @cached
     def value(self):
@@ -334,6 +335,8 @@ class CvtColor(Op):
                         pairFlags[code] = name.upper()
         self.flagName = pairFlags[pairFlag]
 
+        super().__init__()
+
         if self.flagName.lower().endswith('gray'):
             self.isMono = True
             self.isColor = False
@@ -342,8 +345,6 @@ class CvtColor(Op):
             self.isMono = False
             self.isColor = True
             self.node_properties.update(Color().node_properties)
-
-        super().__init__()
 
     @property
     def value(self):

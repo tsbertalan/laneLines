@@ -12,11 +12,9 @@ class PassThrough(Op):
         if hasattr(self, '_hidden'):
             del self._hidden
         self.node_properties['shape'] = 'none'
-        for attr in 'isMono', 'isColor', 'isBoolean':
-            val = getattr(input, attr)
-            if val:
-                setattr(self, attr, val)
+        self.copySetProperties(input)
         super().__init__()
+        self.isPassThrough = True
 
     @property
     def value(self):
@@ -54,7 +52,7 @@ class Output(Input): pass
 class MultistepOp(Op):
 
     def __init__(self):
-        self.node_properties['shape'] = 'parallelogram'
+        self.isMultistepOp = True
         super().__init__()
 
     @property

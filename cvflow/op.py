@@ -83,6 +83,15 @@ class Op:
         return child
 
     def addParent(self, parent):
+        """Should be called before any properties are set, like
+        >>> self.isMono = True
+        Since some are set by conveniece classes like `Mono`, 
+        >>> super().__init__
+        should always be called before these properties are set,
+        so those properties can override super. Basically, we want
+        addParent < super() < isMono
+        to be the overriding order.
+        """
         if not isinstance(parent, Op):
             from cvflow.baseOps import Constant
             parent = Constant(parent)
@@ -90,6 +99,9 @@ class Op:
             self.parents.append(parent)
         if self not in parent.children:
             parent.children.append(self)
+
+        self.copySetProperties(parent)
+
         return parent
 
     @misc.cached
@@ -294,6 +306,15 @@ class Op:
             out.update(d)
         return out
 
+    def copySetProperties(self, other):
+        propNames = ('isMono', 'isColor', 'isBoolean', 'isLogical', 'isPassThrough', 'isMultistepOp')
+        notCopied = ('isLogical', 'isPassThrough', 'isMultistepOp')
+        for propName in propNames:
+            if propName not in notCopied:
+                val = getattr(other, propName)
+                if val:
+                    setattr(self, propName, True)
+
     @Prop(disimplied=['isColor'], dependents=['isBoolean'], shape='box')
     def isMono(self): pass
     
@@ -305,6 +326,12 @@ class Op:
 
     @Prop(color='orange')
     def isLogical(self): pass
+
+    @Prop(shape='none')
+    def isPassThrough(self): pass
+
+    @Prop(fontname='italic')
+    def isMultistepOp(self): pass
 
     def assertProp(self, checkee, **kwargs):
         """
