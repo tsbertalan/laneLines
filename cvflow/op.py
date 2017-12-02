@@ -31,7 +31,7 @@ class Prop:
                 
             # Flip implied/disimplied flags.
             for imp in self.implied:
-                if getattr(innerSelf, imp) != setValue:
+                if not getattr(innerSelf, imp) and setValue:
                     setattr(innerSelf, imp, setValue)
             for dependent in self.dependents:
                 if getattr(innerSelf, dependent) and not setValue:
