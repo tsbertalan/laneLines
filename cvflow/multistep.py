@@ -152,7 +152,6 @@ class MultistepOp(Op):
 
     def showMembers(self, 
         which='all', axes=None, titleSize=10, subplotKwargs={},
-        #excludeTypes=[cvflow.baseOps.CvtColor,],
         excludeTypes=[Input],
         showMultistepParents=True, titleColor='black',
         _getColor=None,
@@ -168,7 +167,7 @@ class MultistepOp(Op):
         ]
 
         if axes is None:
-            axes = cvflow.misc.axesGrid(len(which), clearTicks=True, **subplotKwargs).ravel()
+            axes = cvflow.misc.axesGrid(len(which), clearAxisTicks=True, **subplotKwargs).ravel()
         assert len(which) <= len(axes)
 
         multistepColorSources = ['red', 'blue', 'green', 'orange', 'magenta', 'cyan']

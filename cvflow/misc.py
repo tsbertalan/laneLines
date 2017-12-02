@@ -106,7 +106,14 @@ def show(img, ax=None, title=None, clearTicks=True, titleColor='black', **subplo
     return ax.figure, ax
 
 
-def axesGrid(count, fromsquare=True, preferTall=True, clearTicks=False, **subplotKwargs):
+def clearTicks(ax):
+    ax.patch.set_facecolor('None')
+    ax.set_frame_on(False)
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+
+def axesGrid(count, fromsquare=True, preferTall=True, clearAxisTicks=False, **subplotKwargs):
 
     # Either find the next-largest perfect square,
     # Or the divisors of count that are closest to its square root.
@@ -127,11 +134,9 @@ def axesGrid(count, fromsquare=True, preferTall=True, clearTicks=False, **subplo
     else:
         axes = plt.subplots(nrows=a, ncols=b, **subplotKwargs)[1]
 
-    if clearTicks:
+    if clearAxisTicks:
         for ax in axes.ravel():
-            ax.patch.set_facecolor('None')
-            ax.set_frame_on(False)
-            ax.set_xticks([])
-            ax.set_yticks([])
+            clearTicks(ax)
+            
 
     return axes
