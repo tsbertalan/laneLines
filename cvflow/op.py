@@ -6,10 +6,11 @@ from . import misc
 
 class Prop:
     
-    def __init__(self, implied=None, disimplied=None, **defaultNodeProperties):
+    def __init__(self, implied=[], disimplied=[], dependents=[], **defaultNodeProperties):
         self.implied = implied
         self.disimplied = disimplied
         self.defaultNodeProperties = defaultNodeProperties
+        self.dependents = dependents
         
     def __call__(self, method):
         propName = '_%s' % method.__name__
@@ -29,14 +30,16 @@ class Prop:
                 innerSelf._traits.pop(propName, None)
                 
             # Flip implied/disimplied flags.
-            if self.implied is not None:
-                for imp in self.implied.split():
-                    if getattr(innerSelf, imp) != setValue:
-                        setattr(innerSelf, imp, setValue)
-            if self.disimplied is not None:
-                for dimp in self.disimplied.split():
-                    if getattr(innerSelf, dimp) == setValue:
-                        setattr(innerSelf, dimp, not setValue)
+            for imp in self.implied:
+                if getattr(innerSelf, imp) != setValue:
+                    setattr(innerSelf, imp, setValue)
+            for dependent in self.dependents:
+                if getattr(innerSelf, dependent) and not setValue:
+                    setattr(innerSelf, dependent, False)
+            for dimp in self.disimplied:
+                if getattr(innerSelf, dimp) and setValue:
+                    setattr(innerSelf, dimp, False)
+
             setattr(innerSelf, propName, setValue)
             
         return get
@@ -52,12 +55,8 @@ class Op:
         (especially setting its parents)
         """
         # Starting from the top of the MRO, accumulate node properties.
-        for Cls in type(self).mro()[::-1]:
-            if hasattr(Cls, '_defaultNodeProperties'):
-                self.node_properties.update(Cls._defaultNodeProperties(self))
         for key in ('_visited', '_includeSelfInMembers', 'hidden'):
-            if not hasattr(self, key):
-                setattr(self, key, False)
+            setattr(self, key, getattr(self, key, False))
 
     def invalidateCache(self):
         self.__cache__ = {}
@@ -110,8 +109,6 @@ class Op:
             raise IndexError('%s object has <= %d children.' % (type(self).__name__, index))
 
     def assembleGraph(self, d=None, currentRecursionDepth=0, format='png', addKey=True):
-        # if isinstance(self, CvtColor):
-        #     import utils; utils.bk()
         self._visited = True
 
         if d is None:
@@ -297,13 +294,13 @@ class Op:
             out.update(d)
         return out
 
-    @Prop(disimplied='isColor', shape='box')
+    @Prop(disimplied=['isColor'], dependents=['isBoolean'], shape='box')
     def isMono(self): pass
     
-    @Prop(disimplied='isMono isBoolean', shape='box3d')
+    @Prop(disimplied=['isMono', 'isBoolean'], shape='box3d')
     def isColor(self): pass
     
-    @Prop(implied='isMono', style='dashed')
+    @Prop(implied=['isMono'], style='dashed')
     def isBoolean(self): pass
 
     @Prop(color='orange')

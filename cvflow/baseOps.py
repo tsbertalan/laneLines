@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 
 from cvflow import Op
-from cvflow.misc import cached, Circle, Box, Ellipse
+from cvflow.misc import cached
 
 
 class Lambda(Op):
@@ -279,13 +279,14 @@ class GreaterThan(_ElementwiseInequality):
             return left.value > right.value
 
 
-class AsType(Op, Circle):
+class AsType(Op):
 
     def __init__(self, parent, kind, scaleUintTo255=False):
         self.hidden = True
         self.addParent(parent)
         self.kind = kind
         self.scaleUintTo255 = scaleUintTo255
+        self.node_properties['shape'] = 'circle'
         super().__init__()
 
     @cached
@@ -370,11 +371,9 @@ class EqualizeHistogram(Color):
 
 class Constant(Op):
 
-    def _defaultNodeProperties(self):
-        return dict(style='dotted')
-
     def __init__(self, theConstant):
         self.theConstant = theConstant
+        self.node_properties['style'] = 'dotted'
         super().__init__()
 
     @property

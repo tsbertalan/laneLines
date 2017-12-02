@@ -86,24 +86,6 @@ class NodeDigraph:
         return [self.nodes[nid] for nid in networkx.topological_sort(self._nx)]
 
 
-class Circle:
-
-    def _defaultNodeProperties(self):
-        return dict(shape='circle')
-
-
-class Box:
-
-    def _defaultNodeProperties(self):
-        return dict(shape='box')
-
-
-class Ellipse:
-
-    def _defaultNodeProperties(self):
-        return dict(shape='ellipse')
-
-
 def isInteractive():
     """Are we in a notebook?"""
     import __main__ as main

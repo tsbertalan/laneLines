@@ -5,7 +5,7 @@ from cvflow import Op
 from cvflow.misc import cached
 from cvflow.baseOps import *
 
-class PassThrough(Op, Circle):
+class PassThrough(Op):
 
     def __init__(self, input):
         self.addParent(input)
@@ -13,7 +13,9 @@ class PassThrough(Op, Circle):
             del self._hidden
         self.node_properties['shape'] = 'none'
         for attr in 'isMono', 'isColor', 'isBoolean':
-            setattr(self, attr, getattr(input, attr))
+            val = getattr(input, attr)
+            if val:
+                setattr(self, attr, val)
         super().__init__()
 
     @property
