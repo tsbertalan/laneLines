@@ -78,5 +78,14 @@ class SimplePipeline(Pipeline, Boolean):
         self.constructColorOutpout('zeros', l_binary, s_binary)
 
         self.includeInMultistep([
-            perspective, blurred, hls, l_channel, s_channel, l_binary, s_binary, markings_binary
+            perspective, blurred, hls, l_channel, s_channel, 
+            l_binary, s_binary, markings_binary
         ])
+
+class MinimalPipeline(Pipeline, Boolean):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        r_channel = ColorSplit(self.input, 0)
+        self.output = r_channel > 100
+        self.includeInMultistep([r_channel])

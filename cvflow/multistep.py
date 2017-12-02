@@ -7,13 +7,13 @@ from cvflow.baseOps import *
 
 class PassThrough(Op):
 
-    def __init__(self, input):
+    def __init__(self, input, **kwargs):
         self.addParent(input)
         if hasattr(self, '_hidden'):
             del self._hidden
         self.node_properties['shape'] = 'none'
         self.copySetProperties(input)
-        super().__init__()
+        super().__init__(**kwargs)
         self.isPassThrough = True
 
     @property
@@ -51,9 +51,9 @@ class Output(Input): pass
 
 class MultistepOp(Op):
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.isMultistepOp = True
-        super().__init__()
+        super().__init__(**kwargs)
 
     @property
     def input(self):
@@ -219,7 +219,7 @@ class MultistepOp(Op):
 
 class Pipeline(MultistepOp):
 
-    def __init__(self, image=None, imageShape=(720, 1280)):
+    def __init__(self, image=None, imageShape=(720, 1280), **kwargs):
         """
 
         In subclasses where this constructor is called as `super(**kwargs).__init__()`, 
@@ -230,7 +230,7 @@ class Pipeline(MultistepOp):
             image = ColorImage(shape=imageShape)
         self.input = image
         self.nodeName = 'Pipeline output'
-        super().__init__()
+        super().__init__(d=image._nodeDigraph, **kwargs)
 
     @cached
     def value(self):

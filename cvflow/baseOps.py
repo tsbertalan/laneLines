@@ -7,11 +7,11 @@ from cvflow.misc import cached
 
 class Lambda(Op):
 
-    def __init__(self, f, *args):
+    def __init__(self, f, *args, **kwargs):
         for arg in args:
             self.addParent(arg)
         self.f = f
-        super().__init__()
+        super().__init__(**kwargs)
 
     @cached
     def value(self):
@@ -21,38 +21,38 @@ class Lambda(Op):
 
 class Mono(Op):
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.isMono = True
-        super().__init__()
+        super().__init__(**kwargs)
     
 
 class Boolean(Mono):
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.isBoolean = True
-        super().__init__()
+        super().__init__(**kwargs)
     
 
 class Color(Op):
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.isColor = True
-        super().__init__()
+        super().__init__(**kwargs)
 
 
 class Logical(Op):
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.isLogical = True
-        super().__init__()  
+        super().__init__(**kwargs)  
 
 
 class ColorSplit(Mono):
 
-    def __init__(self, color, index):
+    def __init__(self, color, index, **kwargs):
         self.index = index
         self.addParent(color)
-        super().__init__()
+        super().__init__(**kwargs)
 
     @property
     def value(self):
@@ -73,10 +73,10 @@ class ColorSplit(Mono):
 
 class ColorJoin(Color):
 
-    def __init__(self, *channels):
+    def __init__(self, *channels, **kwargs):
         for ch in channels:
             self.addParent(ch)
-        super().__init__()
+        super().__init__(**kwargs)
 
     @property
     def value(self):
@@ -88,9 +88,9 @@ class ColorJoin(Color):
 
 class BaseImage(Op):
 
-    def __init__(self, shape=(720, 1280)):
+    def __init__(self, shape=(720, 1280), **kwargs):
         self.shape = shape
-        super().__init__()
+        super().__init__(**kwargs)
 
     @property
     def value(self):
@@ -129,7 +129,7 @@ class Blur(Op):
         self.addParent(parent)
         assert ksize % 2
         self.ksize = ksize
-        super().__init__()
+        super().__init__(**kwargs)
         self.isBoolean = False
 
     @cached
@@ -145,7 +145,7 @@ class CircleKernel(Mono):
     def __init__(self, ksize, falloff=3):
         self.ksize = ksize
         self.falloff = falloff
-        super().__init__()
+        super().__init__(**kwargs)
 
     @cached
     def value(self):
@@ -172,7 +172,7 @@ class Dilate(Mono):
         self.kernel = kernel
         self.parents[-1].hidden = True
         self.iterations = iterations
-        super().__init__()
+        super().__init__(**kwargs)
 
     @cached
     def value(self):
@@ -192,7 +192,7 @@ class Erode(Mono):
             kerenel = CircleKernel(5)
         self.addParent(kernel)
         self.iterations = iterations
-        super().__init__()
+        super().__init__(**kwargs)
 
     @cached
     def value(self):
@@ -209,7 +209,7 @@ class Opening(Mono):
         if kernel is None:
             kerenel = CircleKernel(5)
         self.addParent(kernel)
-        super().__init__()
+        super().__init__(**kwargs)
 
     @cached
     def value(self):
@@ -223,7 +223,7 @@ class Sobel(Op):
     def __init__(self, channel, xy='x'):
         self.addParent(channel)
         self.xy = xy
-        super().__init__()
+        super().__init__(**kwargs)
 
     @cached
     def value(self):
@@ -245,7 +245,7 @@ class _ElementwiseInequality(Boolean):
         self.addParent(left)
         self.addParent(right)
         self.orEqualTo = orEqualTo
-        super().__init__()
+        super().__init__(**kwargs)
 
     def __str__(self):
         eq = ''
@@ -287,7 +287,7 @@ class AsType(Op):
         self.addParent(parent)
         self.kind = kind
         self.scaleUintTo255 = scaleUintTo255
-        super().__init__()
+        super().__init__(**kwargs)
         self.node_properties['shape'] = 'circle'
 
     @cached
@@ -311,7 +311,7 @@ class ScalarMultiply(Op):
     def __init__(self, parent, scalar):
         self.addParent(parent)
         self.scalar = scalar
-        super().__init__()
+        super().__init__(**kwargs)
 
     @cached
     def value(self):
@@ -335,7 +335,7 @@ class CvtColor(Op):
                         pairFlags[code] = name.upper()
         self.flagName = pairFlags[pairFlag]
 
-        super().__init__()
+        super().__init__(**kwargs)
 
         if self.flagName.lower().endswith('gray'):
             self.isMono = True
@@ -360,7 +360,7 @@ class EqualizeHistogram(Color):
 
     def __init__(self, image):
         self.addParent(image)
-        super().__init__()
+        super().__init__(**kwargs)
 
     @cached
     def value(self):
@@ -372,10 +372,11 @@ class EqualizeHistogram(Color):
 
 class Constant(Op):
 
-    def __init__(self, theConstant):
+    def __init__(self, theConstant, **kwargs):
         self.theConstant = theConstant
         self.node_properties['style'] = 'dotted'
-        super().__init__()
+        self.hidden = True
+        super().__init__(**kwargs)
 
     @property
     def shape(self):
@@ -397,9 +398,9 @@ class Constant(Op):
 
 class Not(Logical):
 
-    def __init__(self, parent):
+    def __init__(self, parent, **kwargs):
         self.addParent(parent)
-        super().__init__()
+        super().__init__(**kwargs)
         self.isBoolean = True
 
     @property
@@ -412,7 +413,7 @@ class Not(Logical):
 
 class And(Logical):
 
-    def __init__(self, p1, p2):
+    def __init__(self, p1, p2, **kwargs):
         self.addParent(p1)
         self.addParent(p2)
         if not (
@@ -429,7 +430,7 @@ class And(Logical):
                     if got:
                         msg += ' %s.%s = %s' % (n(p), attr, got)
             raise AssertionError(msg + '.')
-        super().__init__()
+        super().__init__(**kwargs)
 
     @cached
     def value(self):
@@ -462,10 +463,10 @@ class And(Logical):
 
 class Or(Logical):
 
-    def __init__(self, parent1, parent2):
+    def __init__(self, parent1, parent2, **kwargs):
         self.addParent(parent1)
         self.addParent(parent2)
-        super().__init__()
+        super().__init__(**kwargs)
 
     @cached
     def value(self):
