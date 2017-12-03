@@ -7,24 +7,23 @@ from cvflow.multistep import MultistepOp
 
 class DilateSobel(MultistepOp, Boolean):
 
-    def __init__(self, singleChannel, postdilate=True, preblurksize=13, sx_thresh=20, dilate_kernel=(2, 4), dilationIterations=3):
+    def __init__(self, singleChannel, 
+        postdilate=True, preblurksize=13, sx_thresh=20, 
+        dilate_kernel=(2, 4), dilationIterations=3
+        ):
         self.sx_thresh = sx_thresh
         self.dilate_kernel = dilate_kernel
         self.dilationIterations = dilationIterations
         self.assertProp(singleChannel, isMono=True)
         self.input = singleChannel
 
-
-
         # Add a little *more* blurring.
         blur = Blur(self.input, ksize=preblurksize)
         sobelx = Sobel(blur, xy='x')
 
         # Sobel mask.
-        # mask_neg = AsBoolean(AsType(LessThan(   self.sobelx, -sx_thresh), 'float32'))
-        # mask_pos = AsBoolean(AsType(GreaterThan(self.sobelx,  sx_thresh), 'float32'))
-        mask_neg = LessThan(   sobelx, -sx_thresh)
-        mask_pos = GreaterThan(sobelx,  sx_thresh)
+        mask_neg = sobelx < -sx_thresh
+        mask_pos = sobelx >  sx_thresh
 
         kernel_midpoint = dilate_kernel[1] // 2
 
@@ -38,7 +37,7 @@ class DilateSobel(MultistepOp, Boolean):
         kernel[:, kernel_midpoint:] = 0
         dmask_pos = Dilate(mask_pos, kernel, iterations=dilationIterations)
 
-        # self.sxbinary = AsBoolean(AsType(And(self.dmask_pos, self.dmask_neg), 'uint8'))
+        # Look for intersections of the left and right masks.
         sxbinary = dmask_pos & dmask_neg
         sxbinary.isBinary = True
 
@@ -55,24 +54,28 @@ class DilateSobel(MultistepOp, Boolean):
 
 class SobelClip(MultistepOp, Boolean):
 
-    def __init__(self, channel, threshold=None):
+    def __init__(self, channel, 
+        narrowIterations=5, wideIterations=5,
+        narrowKernel=10, wideKernel=10,
+        thresholdKwargs={},
+        **dilateSobelKwargs
+        ):
 
         self.assertProp(channel, isMono=True)
         self.input = channel
 
         # Adaptive thresholding of color.
-        if threshold is None:
-            threshold = CountSeekingThreshold(self.input)
+        threshold = CountSeekingThreshold(self.input, **thresholdKwargs)
 
         # Dilated masks of the threshold.
-        narrow = Dilate(threshold, kernel=10, iterations=5)
-        wide = Dilate(narrow, kernel=10, iterations=5)
+        narrow = Dilate(threshold, kernel=narrowKernel, iterations=narrowIterations)
+        wide = Dilate(narrow, kernel=wideKernel, iterations=wideIterations)
         
         # Restricted Sobel-X
         toSobel = self.input & wide
         toSobel.isMono = True
 
-        sobel = DilateSobel(toSobel)
+        sobel = DilateSobel(toSobel, **dilateSobelKwargs)
         clippedSobel = sobel & narrow
         
         self.output = clippedSobel

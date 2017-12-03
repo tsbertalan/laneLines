@@ -165,7 +165,7 @@ class Op:
 
     # @generatorOrList
     def getByKind(self, Kind):
-        for op in self.walk:
+        for op in self.walk():
             if isinstance(op, Kind):
                 yield op
 
@@ -396,6 +396,9 @@ class Op:
 
     @Prop(style='dashed')
     def isLogical(self): pass
+
+    @Prop# TODO: Get some properties for this.
+    def isArithmetic(self): pass
 
     @Prop(shape='none')
     def isPassThrough(self): pass

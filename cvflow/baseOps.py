@@ -54,11 +54,6 @@ class Color(Op):
         super().__init__(**kwargs)
 
 
-class Logical(Op):
-
-    def __init__(self, **kwargs):
-        self.isLogical = True
-        super().__init__(**kwargs)  
 
 
 class ColorSplit(Mono):
@@ -99,6 +94,7 @@ class ColorJoin(Color):
             ch.value
             for ch in self.parents
         ])
+
 
 
 class BaseImage(Op):
@@ -142,7 +138,7 @@ class Blur(Op):
 
     def __init__(self, parent, ksize=5, **kwargs):
         self.addParent(parent)
-        assert ksize % 2
+        assert ksize % 2, 'Kernel size must be odd.'
         self.ksize = ksize
         super().__init__(**kwargs)
         self.isBoolean = False
@@ -154,6 +150,21 @@ class Blur(Op):
     @stringFallback
     def __str__(self):
         return '%dx%d Gaussian blur' % (self.ksize, self.ksize)
+
+
+class UnsharpMask(Op):
+
+    def __init__(self, parent, ksize=0, sigmax=3, **kwargs):
+        self.addParent(parent)
+        self.ksize = ksize
+        self.sigmax = sigmax
+        super().__init__(**kwargs)
+        self.isBoolean = False
+
+    @cached
+    def value(self):
+        image = cv2.GaussianBlur(self.parent().value, (self.ksize, self.ksize), self.sigmax)
+        return cv2.addWeighted(self.parent().value, 1.5, image, -.5, 0)
 
 
 class CircleKernel(Mono, Static):
@@ -174,19 +185,37 @@ class CircleKernel(Mono, Static):
         return 'O kernel(%d, %s)' % (self.ksize, self.falloff)
 
 
+def checkKernel(kernel, hidden=True):
+    if isinstance(kernel, int):
+        kernel = CircleKernel(kernel)
+    else:
+        if isinstance(kernel, np.ndarray):
+            kernel = Constant(kernel)
+    kernel.hidden = hidden
+    return kernel
+
+
+class Convolve(Mono):
+
+    def __init__(self, parent, kernel=20, ddepth=cv2.CV_64F, **kwargs):
+        self.addParent(parent)
+        self.kernel = self.addParent(checkKernel(kernel))
+        self.ddepth = ddepth
+        super().__init__(**kwargs)
+
+    @cached
+    def value(self):
+        return cv2.filter2D(
+            self.parent().value, self.ddepth, self.kernel.value
+        )
+
+
 class Dilate(Mono):
 
     def __init__(self, mono, kernel=5, iterations=1, **kwargs):
         mono = AsType(mono, 'uint8')
         self.addParent(mono)
-        if isinstance(kernel, int):
-            kernel = CircleKernel(kernel)
-        else:
-            if isinstance(kernel, np.ndarray):
-                kernel = Constant(kernel)
-        self.addParent(kernel)
-
-        self.kernel = kernel
+        self.kernel = self.addParent(checkKernel(kernel))
         self.parents[-1].hidden = True
         self.iterations = iterations
         super().__init__(**kwargs)
@@ -238,9 +267,10 @@ class Opening(Mono):
 
 class Sobel(Op):
 
-    def __init__(self, channel, xy='x', **kwargs):
+    def __init__(self, channel, xy='x', ddepth=cv2.CV_64F, **kwargs):
         self.addParent(channel)
         self.xy = xy
+        self.ddepth = ddepth
         super().__init__(**kwargs)
 
     @cached
@@ -251,7 +281,7 @@ class Sobel(Op):
             xy = (1, 1)
         else:
             xy = (0, 1)
-        return cv2.Sobel(self.parent().value, cv2.CV_64F, *xy)
+        return cv2.Sobel(self.parent().value, self.ddepth, *xy)
 
     @stringFallback
     def __str__(self):
@@ -435,6 +465,27 @@ class Constant(Op, Static):
         out = str(what).replace(':', '_')
         out = out[:50]
         return out
+
+
+class Arithmetic(Op):
+
+    def __init__(self, **kwargs):
+        self.isArithmetic = True
+        super().__init__(**kwargs)  
+
+
+class Divide(Arithmetic):
+
+    def __init__(self, left, right, **kwargs):
+        self.addParent(left)
+        self.addParent(right)
+        
+
+class Logical(Op):
+
+    def __init__(self, **kwargs):
+        self.isLogical = True
+        super().__init__(**kwargs)  
 
 
 class Not(Logical):
