@@ -130,7 +130,7 @@ class SobelClip(MultistepOp, Boolean):
 
 class LightPatchRemover(MultistepOp, Boolean):
 
-    def __init__(self, channel, bigK=128):
+    def __init__(self, channel, bigK=128, **kwargs):
         self.assertProp(channel, isMono=True)
         self.input = channel
 
@@ -165,7 +165,55 @@ class LightPatchRemover(MultistepOp, Boolean):
         self.includeInMultistep([
             localAVerage, nearOne, deEmphasized,
         ])
-        super().__init__()
-
+        super().__init__(**kwargs)
         # We then realize that we have just implemented a
         # worse version of an XY Sobel filter.
+
+
+class Expand(MultistepOp, Mono):
+
+    def __init__(self, channel, power=2, rescale=True, **kwargs):
+        self.assertProp(channel, isMono=True)
+        self.input = channel
+
+        x1 = AsType(self.input, 'float64')
+        hi = x1.max()
+        lo = x1.min()
+        span = hi - lo
+        half = hi / 2
+        x2 = (x1 - half)
+        neglocs = x2 < 0
+        poslocs = x2 >= 0
+
+        # This might or might not flip the signs of the negative parts.
+        x3 = x2 ** power
+        
+        # Flip them back.
+        expanded = -abs(x3 & neglocs) + (x3 * poslocs)
+
+        # Maybe rescale between 0 and 1.
+        if rescale:
+            expanded = expanded - expanded.min()
+            expanded = expanded / expanded.max()
+
+        # Save the output, whatever that might be.
+        self.output = expanded
+
+        self.includeInMultistep([
+            x1, hi, lo, span, half, x2, neglocs, poslocs,
+        ])
+        for k in range(1, 9 if expanded else 5):
+            self.includeInMultistep([self.output.nparent(k)])
+        super().__init__(**kwargs)
+
+
+
+
+# Yellow-line finders.
+class HSVSthresh(MultistepOp, Boolean):
+
+    def __init__(self, image):
+        self.assertProp(image, isColor=True)
+
+
+

@@ -446,6 +446,8 @@ class Constant(Op, Static):
 
     def __init__(self, theConstant, **kwargs):
         self.theConstant = theConstant
+        if isinstance(theConstant, (int, float)):
+            self.isScalar = True
         self.node_properties['style'] = 'dotted'
         self.hidden = True
         super().__init__(**kwargs)
@@ -551,8 +553,63 @@ class Multiply(Arithmetic):
     def value(self):
         out = 1
         for parent in self.parents:
-            out *= parent.value
+            try:
+                out = parent.value * out
+            except TypeError:
+                out *= parent.value
         return out
+
+
+class Pow(Arithmetic):
+
+    def __init__(self, x, power, **kwargs):
+        self.addParent(x)
+        self.addParent(power)
+        super().__init__(**kwargs)
+
+
+    @cached
+    def value(self):
+        return self.parent(0).value ** self.parent(1).value
+
+
+class Scalar(Arithmetic):
+
+    def __init__(self, **kwargs):
+        self.isScalar = True
+        super().__init__(**kwargs)
+
+
+class Max(Scalar):
+
+    def __init__(self, op, **kwargs):
+        self.addParent(op)
+        super().__init__(**kwargs)
+
+
+    @cached
+    def value(self):
+        x = self.parent().value
+        try:
+            return x.max()
+        except AttributeError:
+            return max(x)
+
+
+class Min(Scalar):
+
+    def __init__(self, op, **kwargs):
+        self.addParent(op)
+        super().__init__(**kwargs)
+
+
+    @cached
+    def value(self):
+        x = self.parent().value
+        try:
+            return x.min()
+        except AttributeError:
+            return min(x)
 
 
 class Logical(Op):
@@ -592,36 +649,31 @@ class And(Logical):
             n = lambda p: type(p).__name__
             msg = 'Attempted (%s & %s) with' % tuple([n(p) for p in (p1, p2)])
             for p in (p1, p2):
-                for attr in 'isMono', 'isColor':
-                    got = getattr(p, attr)
-                    if got:
-                        msg += ' %s.%s = %s' % (n(p), attr, got)
+                got = p.isBoolean
+                if got:
+                    msg += ' %s.%s = %s' % (n(p), attr, got)
             raise AssertionError(msg + '.')
         super().__init__(**kwargs)
 
     @cached
     def value(self):
         p1, p2 = self.parents
-        if p1.isMono and p2.isMono:
+        if p1.isBoolean and p2.isBoolean:
             out = p1.value & p2.value
         else:
-            def chk(mono, color):
-                if not color.isColor:
-                    raise ValueError('%s, but `%s` is Mono, so `%s` must be Color or also Mono.' % (
-                        actualTypes(), mono.getSimpleName(), color.getSimpleName()
-                    ))
-            if p1.isMono:
-                chk(p1, p2)
-                mono = p1
-                color = p2
-            elif p2.isMono:
-                chk(p2, p1)
-                mono = p2
-                color = p1
+            if p1.isBoolean:
+                mask = p1
+                masked = p2 
+            elif p2.isBoolean:
+                mask = p2
+                masked = p1
             else:
-                raise ValueError('%s, but neither type was Mono.' % actualTypes())
-            out = np.copy(color.value)
-            out[np.logical_not(mono.value)] = 0
+                raise ValueError(
+                    '%s, but need one or both argument to be Boolean.' %
+                    actualTypes()
+                )
+            out = np.copy(masked.value)
+            out[np.logical_not(mask.value)] = 0
         return out
 
     @stringFallback

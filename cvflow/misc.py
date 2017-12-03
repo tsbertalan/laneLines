@@ -5,6 +5,7 @@ import numpy as np
 def cacheKey(objname, *args, **kwargs):
     return '%s(*%s, **%s)' % (objname, args, kwargs)
 
+
 def _cached(method):
     def wrappedMethod(self, *args, **kwargs):
         if not hasattr(self, '__cache__'):
@@ -131,17 +132,79 @@ def isInteractive():
     return not hasattr(main, '__file__')
 
 
-def show(img, ax=None, title=None, clearTicks=True, titleColor='black', **subplots_adjust):
+def show(img, ax=None, title=None, clearTicks=True, titleColor='black', histogramOverlayAlpha=0, **subplots_adjust):
     """Display an image without x/y ticks."""
+    # Make axes for plotting if we weren't supplied some from outside.
     if ax is None:
         fig, ax = plt.subplots()
+
+    # Plot the actual image.
     ax.imshow(img)
+
+    # Maybe draw one or three histograms.
+    mono = len(img.shape) == 2 or img.shape[-1] == 1
+    if histogramOverlayAlpha:
+        hi = img.shape[0]
+        getData = lambda ichannel: np.copy(img.reshape((img.shape[0], img.shape[1], -1))[:, :, ichannel]).ravel()
+        boolean = False if not mono else len(set(getData(0))) <= 2
+        def hist(ichannel, color, heightFraction=.25, histAlpha=histogramOverlayAlpha):
+            
+            if not mono:
+                histAlpha /= 2
+
+            def normalize(vec):
+                vec -= vec.min()
+                if vec.max() != 0:
+                    vec = vec / vec.max()
+                return vec
+
+            data = normalize(getData(ichannel))
+
+            # Generate the rescaled histogram.
+            hist, bins = np.histogram(data, bins=128 if not boolean else 2)
+            # Use bin centers.
+            bins = (bins[:-1] + bins[1:]) / 2.
+            imax = np.argmax(hist)
+            vmax = bins[imax]
+            bins = normalize(bins)
+            hist = normalize(np.log10(hist + 1e-10))
+
+            hist *= img.shape[0] * heightFraction
+            bins *= img.shape[1]
+
+            # Plot the histogram.
+            ax.fill_between(bins, hi, hi-hist, alpha=histAlpha, color=color, zorder=999)
+
+            # Add a vline at the mode.
+            ax.axvline(bins[imax], label='mode: %d' % vmax, color=color)
+
+            # Add a vline at the largest value with some presense in the data.
+            if mono:
+                brightest = max(bins[hist/max(hist)>1e-4])
+                ax.axvline(
+                    brightest, 
+                    label='~max: %d' % brightest, color=color, linestyle='--'
+                )
+        
+        # Don't bother trying to make histograms for boolean data.
+        if mono:
+            hist(0, 'white')
+        else:
+            # For tricolor images, pretend the colors are RGB and histogram accordingly.
+            for i in range(3):
+                hist(i, ['red', 'green', 'blue'][i])
+
+    # Doctor up the plot a bit.
     if clearTicks:
         ax.set_xticks([])
         ax.set_yticks([])
     if title is not None: ax.set_title(title, color=titleColor)
+    ax.set_xlim(0, img.shape[1])
+    ax.set_ylim(img.shape[0], 0)
     if len(subplots_adjust) > 0:
         ax.figure.subplots_adjust(**subplots_adjust)
+
+
     return ax.figure, ax
 
 
@@ -179,3 +242,4 @@ def axesGrid(count, fromsquare=True, preferTall=True, clearAxisTicks=False, **su
             
 
     return axes
+

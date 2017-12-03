@@ -171,7 +171,10 @@ class MultistepOp(Op):
         which = [
             m for m in self.toposortMembers
             if m in which and type(m) not in excludeTypes
+            and not m.isScalar
         ]
+        if len(which) == 0:
+            return []
 
         if axes is None:
             axes = cvflow.misc.axesGrid(len(which), clearAxisTicks=True, **subplotKwargs).ravel()
@@ -217,8 +220,10 @@ class MultistepOp(Op):
         if showMultistepParents:
             for p in [p for p in which if isinstance(p, cvflow.MultistepOp)]:
                 shown.extend(p.showMembers(
-                    which='all', subplotKwargs=subplotKwargs, excludeTypes=excludeTypes, 
-                    showMultistepParents=True, titleColor=multistepColors[p], _getColor=_getColor,
+                    which='all', subplotKwargs=subplotKwargs, 
+                    excludeTypes=excludeTypes, showMultistepParents=True, 
+                    titleColor=multistepColors[p], _getColor=_getColor,
+                    **kwargs
                 ))
 
         return shown
@@ -254,7 +259,7 @@ class Pipeline(MultistepOp):
                 warn('`%s` called with color=True, but does not implement colorOutput.' % self)
         return self.value
 
-    @cvflow.op.constantOrOpInput
+    @cvflow.constantOrOpInput
     def constructColorOutpout(self, *args, **kwargs):
         self.colorOutput = super().constructColorOutpout(*args, **kwargs)
         self.colorOutput.nodeName = 'Color pipeline output'

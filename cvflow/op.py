@@ -64,6 +64,15 @@ def constantOrOpInput(method):
     return wrapped
 
 
+def scalarOutputIfScalarInputs(method):
+    def wrapped(self, *args, **kwargs):
+        out = method(self, *args, **kwargs)
+        if all([isinstance(arg, (int, float)) or arg.isScalar for arg in args]) and self.isScalar:
+            out.isScalar = True
+        return out
+    return wrapped
+
+
 class Op:
 
     def __init__(self):
@@ -137,7 +146,7 @@ class Op:
         except IndexError:
             raise IndexError('%s object has <= %d children.' % (type(self).__name__, index))
 
-    def walk(self, currentRecursionDepth=0, which=['parents', 'children'], excludeSelf=False):
+    def _walk(self, currentRecursionDepth=0, which=['parents', 'children'], excludeSelf=False):
         self._visited = True
         if not excludeSelf:
             yield self
@@ -145,10 +154,19 @@ class Op:
             l = dict(parents=self.parents, children=self.children)[k]
             for op in l:
                 if not op._visited:
-                    for op in op.walk(currentRecursionDepth=currentRecursionDepth+1):
+                    for op in op.walk(
+                            currentRecursionDepth=currentRecursionDepth+1, 
+                            which=which, excludeSelf=False
+                        ):
                         yield op
         if currentRecursionDepth == 0:
             self._clearVisited()
+
+    def walk(self, **kwargs):
+        # To prevent callers from stopping early and leaving the tree
+        # in some undermined state v/v _visited, we need to make a full list.
+        # TODO: Implement walk as an object with a __del__ method that calls _clearVisited().
+        return [op for op in self._walk(**kwargs)]
 
     def getAncestors(self):
         for op in self.walk(self, which=['parents'], excludeSelf=True):
@@ -163,15 +181,31 @@ class Op:
         assert len(roots) == 1, (roots, self)
         return list(roots)[0]
 
-    # @generatorOrList
     def getRoots(self, includeStatic=False):
         for op in self.walk():
             if (includeStatic or not isinstance(op, cvflow.Static)) and len(op.parents) == 0:
                 yield op
 
-    # @generatorOrList
-    def getByKind(self, Kind):
-        for op in self.walk():
+    def getByKind(self, Kind, index=None, asList=True, **kwargs):
+        if index is None:
+            out = self._getByKindGenerator(Kind, **kwargs)
+            if asList:
+                out = list(out)
+            return out
+        else:
+            i = 0
+            for op in self._getByKindGenerator(Kind, **kwargs):
+                if i == index:
+                    return op
+                i += 1
+
+    def _getByKindGenerator(self, Kind, which='all'):
+        source = {
+            'all': self.walk, 
+            'ancestors': self.getAncestors, 
+            'descendants': self.getDescendants
+        }[which]
+        for op in source():
             if isinstance(op, Kind):
                 yield op
 
@@ -344,6 +378,7 @@ class Op:
         kwargs.setdefault('title', title)
         return misc.show(self.value, **kwargs)
 
+    @scalarOutputIfScalarInputs
     @constantOrOpInput
     def __truediv__(self, other):
         return cvflow.baseOps.Divide(self, other, zeroSpotsToMax=False)
@@ -352,48 +387,71 @@ class Op:
     def __floordiv__(self, other):
         return cvflow.baseOps.Divide(self, other, zeroSpotsToMax=True)
 
+    @scalarOutputIfScalarInputs
     @constantOrOpInput
     def __mul__(self, other):
         return cvflow.baseOps.Multiply(self, other)
 
+    @scalarOutputIfScalarInputs
     @constantOrOpInput
-    def __abs__(self, other):
+    def __abs__(self):
         return cvflow.baseOps.Abs(self)
 
+    @scalarOutputIfScalarInputs
     @constantOrOpInput
     def __add__(self, other):
         return cvflow.baseOps.Add(self, other)
 
+    @scalarOutputIfScalarInputs
     @constantOrOpInput
     def __sub__(self, other):
         return cvflow.baseOps.Subtract(self, other)
 
+    @scalarOutputIfScalarInputs
+    @constantOrOpInput
+    def __pow__(self, power):
+        return cvflow.Pow(self, power)
+
+    def max(self):
+        return cvflow.Max(self)
+    
+    def min(self):
+        return cvflow.Min(self)
+
+    @scalarOutputIfScalarInputs
     @constantOrOpInput
     def __and__(self, other):
         return cvflow.baseOps.And(self, other)
 
+    @scalarOutputIfScalarInputs
     @constantOrOpInput
     def __or__(self, other):
         return cvflow.baseOps.Or(self, other)
 
+    @scalarOutputIfScalarInputs
     def __neg__(self):
         return cvflow.baseOps.ScalarMultiply(self, -1)
 
+    @scalarOutputIfScalarInputs
     def __invert__(self):
         return cvflow.baseOps.Not(self)
 
+    @scalarOutputIfScalarInputs
     @constantOrOpInput
     def __lt__(self, other):
         return cvflow.baseOps.LessThan(self, other)
 
+    @scalarOutputIfScalarInputs
     @constantOrOpInput
     def __le__(self, other):
         return cvflow.baseOps.LessThan(self, other, orEqualTo=True)
 
+    @scalarOutputIfScalarInputs
     @constantOrOpInput
     def __gt__(self, other):
         return cvflow.baseOps.GreaterThan(self, other)
 
+    @scalarOutputIfScalarInputs
     @constantOrOpInput
     def __ge__(self, other):
         return cvflow.baseOps.GreaterThan(self, other, orEqualTo=True)
@@ -432,7 +490,7 @@ class Op:
     @Prop(style='dashed')
     def isLogical(self): pass
 
-    @Prop# TODO: Get some properties for this.
+    @Prop()# TODO: Get some properties for this.
     def isArithmetic(self): pass
 
     @Prop(shape='none')
@@ -440,6 +498,9 @@ class Op:
 
     @Prop(fontname='bold')
     def isMultistepOp(self): pass
+
+    @Prop()
+    def isScalar(self): pass
 
     def assertProp(self, checkee, **kwargs):
         """
