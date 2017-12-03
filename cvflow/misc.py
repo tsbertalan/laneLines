@@ -132,7 +132,11 @@ def isInteractive():
     return not hasattr(main, '__file__')
 
 
-def show(img, ax=None, title=None, clearTicks=True, titleColor='black', histogramOverlayAlpha=0, **subplots_adjust):
+def show(img, 
+    ax=None, title=None, clearTicks=True, 
+    titleColor='black', histogramOverlayAlpha=0, 
+    doLegend=True,
+    **subplots_adjust):
     """Display an image without x/y ticks."""
     # Make axes for plotting if we weren't supplied some from outside.
     if ax is None:
@@ -143,10 +147,11 @@ def show(img, ax=None, title=None, clearTicks=True, titleColor='black', histogra
 
     # Maybe draw one or three histograms.
     mono = len(img.shape) == 2 or img.shape[-1] == 1
+    getData = lambda ichannel: np.copy(img.reshape((img.shape[0], img.shape[1], -1))[:, :, ichannel]).ravel()
+    boolean = all([len(set(getData(k))) <= 2 for k in range(1 if mono else 3)])
+    didvline = []
     if histogramOverlayAlpha:
         hi = img.shape[0]
-        getData = lambda ichannel: np.copy(img.reshape((img.shape[0], img.shape[1], -1))[:, :, ichannel]).ravel()
-        boolean = False if not mono else len(set(getData(0))) <= 2
         def hist(ichannel, color, heightFraction=.25, histAlpha=histogramOverlayAlpha):
             
             if not mono:
@@ -165,7 +170,7 @@ def show(img, ax=None, title=None, clearTicks=True, titleColor='black', histogra
             # Use bin centers.
             bins = (bins[:-1] + bins[1:]) / 2.
             imax = np.argmax(hist)
-            vmax = bins[imax]
+            vmax = int(255*bins[imax])
             bins = normalize(bins)
             hist = normalize(np.log10(hist + 1e-10))
 
@@ -177,6 +182,7 @@ def show(img, ax=None, title=None, clearTicks=True, titleColor='black', histogra
 
             # Add a vline at the mode.
             ax.axvline(bins[imax], label='mode: %d' % vmax, color=color)
+            didvline.append(1)
 
             # Add a vline at the largest value with some presense in the data.
             if mono:
@@ -187,12 +193,13 @@ def show(img, ax=None, title=None, clearTicks=True, titleColor='black', histogra
                 )
         
         # Don't bother trying to make histograms for boolean data.
-        if mono:
-            hist(0, 'white')
-        else:
-            # For tricolor images, pretend the colors are RGB and histogram accordingly.
-            for i in range(3):
-                hist(i, ['red', 'green', 'blue'][i])
+        if not boolean:
+            if mono:
+                hist(0, 'white')
+            else:
+                # For tricolor images, pretend the colors are RGB and histogram accordingly.
+                for i in range(3):
+                    hist(i, ['red', 'green', 'blue'][i])
 
     # Doctor up the plot a bit.
     if clearTicks:
@@ -201,6 +208,7 @@ def show(img, ax=None, title=None, clearTicks=True, titleColor='black', histogra
     if title is not None: ax.set_title(title, color=titleColor)
     ax.set_xlim(0, img.shape[1])
     ax.set_ylim(img.shape[0], 0)
+    if doLegend and didvline: ax.legend(fontsize=6, loc='upper right')
     if len(subplots_adjust) > 0:
         ax.figure.subplots_adjust(**subplots_adjust)
 
@@ -243,3 +251,51 @@ def axesGrid(count, fromsquare=True, preferTall=True, clearAxisTicks=False, **su
 
     return axes
 
+
+
+class VisualizeFilter:
+    def __init__(self, colorFilter, allFrames):
+        self.colorFilter = colorFilter
+        self.allFrames = allFrames
+    
+    
+    def __call__(self, frame, clearAxes=True, closeFigure=False, **kwargs):
+        import utils
+        self.colorFilter(frame)
+        axes = getattr(self, 'axes', None)
+        figs = self.colorFilter.showMembers(
+            axes=axes, subplotKwargs=dict(figsize=(16,9)), 
+            wspace=0, showMultistepParents=False, **kwargs
+        )
+        if len(figs) > 0:
+            fig = figs[0]
+            self.axes = fig.axes
+            for ax in fig.axes:
+                cvflow.misc.clearTicks(ax)
+            out = utils.fig2img(fig)
+            if clearAxes:
+                for ax in fig.axes:
+                    ax.cla()
+            if closeFigure:
+                plt.close(fig)
+            return out
+    
+    @property
+    def fig(self):
+        return self.axes[0].figure
+    
+    def visualizeFromKey(self, k, maxFrames=np.inf, **kwargs):
+        import utils
+        frames = self.allFrames[k]
+        fpath = 'cf-%s-%s-vis' % (self.colorFilter, k)
+        if maxFrames < np.inf:
+            frames = frames[:maxFrames]
+            fpath += '-%dframes' % maxFrames
+        fpath += '.mp4'
+        vid = utils.transformVideo(frames, fpath, lambda frame: self(frame, **kwargs), desc=fpath)
+        self(frames[-1], clearAxes=False)
+        return vid, self.fig
+        
+    def __del__(self):
+        if hasattr(self, 'axes'):
+            plt.close(self.fig)

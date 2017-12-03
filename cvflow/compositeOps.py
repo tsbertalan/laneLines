@@ -205,15 +205,3 @@ class Expand(MultistepOp, Mono):
         for k in range(1, 9 if expanded else 5):
             self.includeInMultistep([self.output.nparent(k)])
         super().__init__(**kwargs)
-
-
-
-
-# Yellow-line finders.
-class HSVSthresh(MultistepOp, Boolean):
-
-    def __init__(self, image):
-        self.assertProp(image, isColor=True)
-
-
-

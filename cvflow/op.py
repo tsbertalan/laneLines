@@ -6,17 +6,18 @@ from . import misc
 
 class Prop:
     
-    def __init__(self, implied=[], disimplied=[], dependents=[], **defaultNodeProperties):
+    def __init__(self, implied=[], disimplied=[], dependents=[], default=False, **defaultNodeProperties):
         self.implied = implied
         self.disimplied = disimplied
         self.defaultNodeProperties = defaultNodeProperties
         self.dependents = dependents
+        self.default = default
         
     def __call__(self, method):
         propName = '_%s' % method.__name__
         @property
         def get(innerSelf):
-            return getattr(innerSelf, propName, False)
+            return getattr(innerSelf, propName, self.default)
         @get.setter
         def get(innerSelf, setValue):
             
@@ -169,7 +170,7 @@ class Op:
         return [op for op in self._walk(**kwargs)]
 
     def getAncestors(self):
-        for op in self.walk(self, which=['parents'], excludeSelf=True):
+        for op in self.walk(which=['parents'], excludeSelf=True):
             yield op
 
     def getDescendants(self):
@@ -501,6 +502,9 @@ class Op:
 
     @Prop()
     def isScalar(self): pass
+
+    @Prop(default=True)
+    def isVisualized(self): pass
 
     def assertProp(self, checkee, **kwargs):
         """

@@ -152,7 +152,7 @@ class MultistepOp(Op):
     def getMembersByType(self, Kind):
         return [m for m in self.members if isinstance(m, Kind)]
 
-    @property
+    @cached
     def toposortMembers(self):
         toposort = self.assembleGraph().toposort()
         return [m for m in toposort if m in self.members]
@@ -160,7 +160,7 @@ class MultistepOp(Op):
     def showMembers(self, 
         which='all', axes=None, titleSize=10, subplotKwargs={},
         excludeTypes=[Input],
-        showMultistepParents=True, titleColor='black',
+        recurse=False, titleColor='black',
         _getColor=None,
         **kwargs):
         for k, v in dict(top=.9, bottom=0, left=0, right=1, wspace=.01, hspace=.17).items():
@@ -172,6 +172,7 @@ class MultistepOp(Op):
             m for m in self.toposortMembers
             if m in which and type(m) not in excludeTypes
             and not m.isScalar
+            and m.isVisualized
         ]
         if len(which) == 0:
             return []
@@ -217,7 +218,7 @@ class MultistepOp(Op):
         fig.suptitle(str(self) if self.nodeName is None else self.nodeName, color=titleColor)
         shown = [fig]
 
-        if showMultistepParents:
+        if recurse:
             for p in [p for p in which if isinstance(p, cvflow.MultistepOp)]:
                 shown.extend(p.showMembers(
                     which='all', subplotKwargs=subplotKwargs, 

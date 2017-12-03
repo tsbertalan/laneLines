@@ -635,7 +635,7 @@ class Not(Logical):
         return '!(%s)' % self.parent()
 
 
-class And(Logical):
+class AndTwoInputs(Logical):
 
     def __init__(self, p1, p2, **kwargs):
         self.addParent(p1)
@@ -679,6 +679,14 @@ class And(Logical):
     @stringFallback
     def __str__(self):
         return '&'
+
+
+def And(*args, **kwargs):
+
+    if len(args) > 2:
+        return And(args[0], And(*args[1:], **kwargs), **kwargs)
+    else:
+        return AndTwoInputs(*args, **kwargs)
 
 
 class Or(Logical):
