@@ -175,6 +175,10 @@ class Op:
             if isinstance(op, Kind):
                 yield op
 
+    @property
+    def numVisibleParents(self):
+        return len([p for p in self.parents if not p.hidden])
+
     def assembleGraph(self, d=None, currentRecursionDepth=0, format='png', addKey=True, linkMultisteps=False):
         self._visited = True
 
@@ -182,17 +186,17 @@ class Op:
             d = misc.NodeDigraph(format=format)
 
         if self.hidden:
-            assert len(self.parents) <= 1
+            assert self.numVisibleParents <= 1
         elif linkMultisteps or type(self) is not cvflow.Input:
             for parent in self.parents:
                 parent = parent
                 while parent.hidden and (linkMultisteps or not isinstance(parent, cvflow.Output)):
-                    npar = len(parent.parents)
+                    npar = parent.numVisibleParents
                     if npar == 0:
                         parent = None
                         break
                     else:
-                        assert npar == 1, '%s has hidden=%s, but does not have 1 parent.' % (target, target.hidden)
+                        assert npar == 1, '%s has hidden=%s, but does not have 1 parent.' % (parent, parent.hidden)
                         parent = parent.parent()
                 if (
                     parent is not None
@@ -330,11 +334,14 @@ class Op:
         if len(parents) > 1: parentNames = '(%s)' % parentNames
 
         selfName = self.getSimpleName()
-        kwargs.setdefault('title', r'%s %s %s' % (
+        title = r'%s %s %s' % (
             parentNames,
             arrow,
             selfName, 
-        ))
+        )
+        if len(title) > 50:
+            title = selfName
+        kwargs.setdefault('title', title)
         return misc.show(self.value, **kwargs)
 
     @constantOrOpInput

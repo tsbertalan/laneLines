@@ -81,8 +81,9 @@ class DilateSobel(MultistepOp, Boolean):
         ])
 
         # For analysis, also allow for outputting a multicolored dilation.
-        self.constructColorOutpout(sxbinary*0, dmask_pos, dmask_neg).nodeName = 'dmask (%s)' % self
-        self.constructColorOutpout(sxbinary*0, self.mask_pos, self.mask_neg).nodeName = 'mask (%s)' % self
+        zero = sxbinary*0; zero.hidden = True
+        self.constructColorOutpout(zero, dmask_pos, dmask_neg).nodeName = 'dmask (%s)' % self
+        self.constructColorOutpout(zero, self.mask_pos, self.mask_neg).nodeName = 'mask (%s)' % self
         super().__init__()
 
     @stringFallback

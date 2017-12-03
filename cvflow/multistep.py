@@ -110,6 +110,7 @@ class MultistepOp(Op):
         return d
 
     def includeInMultistep(self, members, hiddenClasses=[Constant,]):
+        # TODO: Automate this.
         out = []
         for m in members:
             out.append(m)
@@ -258,4 +259,4 @@ class Pipeline(MultistepOp):
         self.colorOutput = super().constructColorOutpout(*args, **kwargs)
         self.colorOutput.nodeName = 'Color pipeline output'
         self.members = [self.colorOutput]
-        return colorOutput
+        return self.colorOutput
