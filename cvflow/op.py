@@ -53,8 +53,14 @@ def constantOrOp(obj):
 
 
 def constantOrOpInput(method):
-    def wrapped(self, input, *args, **kwargs):
-        return method(self, constantOrOp(input), *args, **kwargs)
+    def wrapped(self, *args, **kwargs):
+        return method(self, 
+            *[
+                constantOrOp(arg)
+                for arg in args
+            ],
+            **kwargs
+        )
     return wrapped
 
 
@@ -332,14 +338,36 @@ class Op:
         return misc.show(self.value, **kwargs)
 
     @constantOrOpInput
+    def __truediv__(self, other):
+        return cvflow.baseOps.Divide(self, other, zeroSpotsToMax=False)
+
+    @constantOrOpInput
+    def __floordiv__(self, other):
+        return cvflow.baseOps.Divide(self, other, zeroSpotsToMax=True)
+
+    @constantOrOpInput
+    def __mul__(self, other):
+        return cvflow.baseOps.Multiply(self, other)
+
+    @constantOrOpInput
+    def __abs__(self, other):
+        return cvflow.baseOps.Abs(self)
+
+    @constantOrOpInput
+    def __add__(self, other):
+        return cvflow.baseOps.Add(self, other)
+
+    @constantOrOpInput
+    def __sub__(self, other):
+        return cvflow.baseOps.Subtract(self, other)
+
+    @constantOrOpInput
     def __and__(self, other):
-        from cvflow.baseOps import And
-        return And(self, other)
+        return cvflow.baseOps.And(self, other)
 
     @constantOrOpInput
     def __or__(self, other):
-        from cvflow.baseOps import Or
-        return Or(self, other)
+        return cvflow.baseOps.Or(self, other)
 
     def __neg__(self):
         return cvflow.baseOps.ScalarMultiply(self, -1)
@@ -421,4 +449,37 @@ class Op:
                 propTarget, self.getSimpleName()
             ))
 
+    @misc.cached
+    def shape(self):
+        if len(self.parents) > 0:
+            shapes = [parent.shape for parent in self.parents if parent.shape is not None]
+            if len(shapes) > 0:
+                return shapes[0]
+    @shape.setter
+    def shape(self, newshape):
+        self.__cache__ = getattr(self, '__cache__', {})
+        self.__cache__[cvflow.misc.cacheKey('shape', newshape)] = newshape
 
+    @constantOrOpInput
+    def constructColorOutpout(self, *args, dtype='uint8', scaleUintTo255=True):
+        # 'zeros' can be passed for some of the args, but only if
+        # self.input.shape is defined.
+        # TODO: handle this direcly in ColorJoin; maybe by passing a reference to self. Or by taking the shape of a nonzero parent.value, and degrading to a zero-column if they're all zeros.
+        channels = [
+            cvflow.Constant(np.zeros(self.input.shape).astype(dtype))
+            if getattr(c, 'theConstant', None) == 'zeros'
+            else cvflow.AsType(c, dtype, scaleUintTo255=scaleUintTo255)
+            for c in args
+        ]
+        for c in channels:
+            if isinstance(c, cvflow.Constant):
+                c.hidden = True
+        self.colorOutput = cvflow.ColorJoin(*channels)
+        self.members = [self.colorOutput]
+        return self.colorOutput
+
+    def nparent(self, n):
+        out = self
+        for i in range(n):
+            out = out.parent()
+        return out

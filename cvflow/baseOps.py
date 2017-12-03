@@ -54,8 +54,6 @@ class Color(Op):
         super().__init__(**kwargs)
 
 
-
-
 class ColorSplit(Mono):
 
     def __init__(self, color, index, **kwargs):
@@ -72,8 +70,6 @@ class ColorSplit(Mono):
         out = originalOut = 'channel %d' % self.index
         if isinstance(self.parent(), CvtColor):
             out = str(self.parent()).split()[-1]
-            if out.endswith('.'):
-                out = out[:-1]
             if len(out) != 3 or len(out) <= self.index:
                 out = originalOut
             else:
@@ -94,7 +90,6 @@ class ColorJoin(Color):
             ch.value
             for ch in self.parents
         ])
-
 
 
 class BaseImage(Op):
@@ -208,6 +203,10 @@ class Convolve(Mono):
         return cv2.filter2D(
             self.parent().value, self.ddepth, self.kernel.value
         )
+
+    @stringFallback
+    def __str__(self):
+        return '%s convolution' % self.kernel
 
 
 class Dilate(Mono):
@@ -329,6 +328,7 @@ class GreaterThan(_ElementwiseInequality):
         else:
             return left.value > right.value
 
+
 class EqualTo(Boolean):
 
     baseSymbol = '=='
@@ -368,6 +368,8 @@ class AsType(Op):
             if m != 0:
                 inarray /= m
                 inarray *= 255
+        elif self.scaleUintTo255:
+            raise ValueError('scaleUintTo255=True was passed, but dtype is not recognized as  uint8.')
         return inarray.astype(self.kind)
 
     @stringFallback
@@ -421,7 +423,7 @@ class CvtColor(Op):
 
     @stringFallback
     def __str__(self):
-        return '%s to %s.' % tuple(
+        return '%s to %s' % tuple(
             self.flagName.replace('COLOR_', '').split('2')
         )
 
@@ -476,10 +478,82 @@ class Arithmetic(Op):
 
 class Divide(Arithmetic):
 
+    def __init__(self, left, right, zeroSpotsToMax=True, **kwargs):
+        self.addParent(left)
+        self.addParent(right)
+        self.zeroSpotsToMax = zeroSpotsToMax
+        super().__init__(**kwargs)  
+
+    @cached
+    def value(self):
+        left = self.parent(0).value
+        right = np.copy(self.parent(1).value)
+        right[right==0] = min(right[right!=0])
+        return left / right
+
+        # res = left / right
+        # maxOk = res[right != 0].max()
+        # res[right == 0] = maxOk
+        # res[(right == 0) & (left == 0)] = 0
+        # return res
+
+    @stringFallback
+    def __str__(self):
+        return '//' if self.zeroSpotsToMax else '/'
+
+
+class Abs(Arithmetic):
+
+    def __init__(self, parent, **kwargs):
+        self.addParent(parent)
+        super().__init__(**kwargs)
+
+    @cached
+    def value(self):
+        return abs(self.parent().value)
+
+
+class Add(Arithmetic):
+
+    def __init__(self, *parents, **kwargs):
+        for parent in parents:
+            self.addParent(parent)
+        super().__init__(**kwargs)
+
+    @cached
+    def value(self):
+        out = 0
+        for parent in self.parents:
+            out += parent.value
+        return out
+
+
+class Subtract(Arithmetic):
+
     def __init__(self, left, right, **kwargs):
         self.addParent(left)
         self.addParent(right)
-        
+        super().__init__(**kwargs)
+
+    @cached
+    def value(self):
+        return self.parent(0).value - self.parent(1).value
+
+
+class Multiply(Arithmetic):
+
+    def __init__(self, *parents, **kwargs):
+        for parent in parents:
+            self.addParent(parent)
+        super().__init__(**kwargs)
+
+    @cached
+    def value(self):
+        out = 1
+        for parent in self.parents:
+            out *= parent.value
+        return out
+
 
 class Logical(Op):
 

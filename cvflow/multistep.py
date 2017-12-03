@@ -253,17 +253,9 @@ class Pipeline(MultistepOp):
                 warn('`%s` called with color=True, but does not implement colorOutput.' % self)
         return self.value
 
-    def constructColorOutpout(self, r, b, g, dtype='uint8', scaleUintTo255=True):
-        channels = [
-            Constant(np.zeros(self.input.shape).astype(dtype))
-            if c == 'zeros'
-            else AsType(c, dtype, scaleUintTo255=scaleUintTo255)
-            for c in (r,b,g)
-        ]
-        for c in channels:
-            if isinstance(c, Constant):
-                c.hidden = True
-
-        self.colorOutput = ColorJoin(*channels)
+    @cvflow.op.constantOrOpInput
+    def constructColorOutpout(self, *args, **kwargs):
+        self.colorOutput = super().constructColorOutpout(*args, **kwargs)
         self.colorOutput.nodeName = 'Color pipeline output'
         self.members = [self.colorOutput]
+        return colorOutput

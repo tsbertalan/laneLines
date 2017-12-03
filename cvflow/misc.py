@@ -2,11 +2,14 @@ import cvflow
 import networkx, graphviz, matplotlib.pyplot as plt
 import numpy as np
 
+def cacheKey(objname, *args, **kwargs):
+    return '%s(*%s, **%s)' % (objname, args, kwargs)
+
 def _cached(method):
     def wrappedMethod(self, *args, **kwargs):
         if not hasattr(self, '__cache__'):
             self.__cache__ = {}
-        key = '%s(*%s, **%s)' % (method.__name__, args, kwargs)
+        key = cacheKey(method.__name__, *args, **kwargs)
         if key in self.__cache__:
             out = self.__cache__[key]
         else:
