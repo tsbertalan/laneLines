@@ -449,7 +449,13 @@ class Op:
         out = {}
         for d in self._traits.values():
             out.update(d)
+        out.update(getattr(self, '_node_properties', {}))
         return out
+
+    def setInstanceNodeProperties(self, **newprops):
+        oldprops = getattr(self, '_node_properties', {})
+        oldprops.update(newprops)
+        self._node_properties = oldprops
 
     def copySetProperties(self, other):
         propNames = ('isMono', 'isColor', 'isBoolean', 'isLogical', 'isPassThrough', 'isMultistepOp')
@@ -520,7 +526,10 @@ class Op:
         # TODO: handle this direcly in ColorJoin; maybe by passing a reference to self. Or by taking the shape of a nonzero parent.value, and degrading to a zero-column if they're all zeros.
         channels = [
             cvflow.Constant(np.zeros(self.input.shape).astype(dtype))
-            if getattr(c, 'theConstant', None) == 'zeros'
+            if (
+                isinstance(getattr(c, 'theConstant', None), str)
+                and getattr(c, 'theConstant', None) == 'zeros'
+            )
             else cvflow.AsType(c, dtype, scaleUintTo255=scaleUintTo255)
             for c in args
         ]

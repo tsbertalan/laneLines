@@ -68,7 +68,7 @@ class MultistepOp(Op):
         op.nodeName = '%s (to %s)' % (name, self.getSimpleName())
         op.node_properties['color'] = 'blue'
         input = Input(op)
-        input.nodeName = 'Input to %s (%s).' % (self.getSimpleName(), name)
+        input.nodeName = 'Input to %s (%s)' % (self.getSimpleName(), name)
         if not isinstance(self, Pipeline):
             self.addParent(op)
         self._input = input
@@ -244,7 +244,7 @@ class MultistepOp(Op):
     def plotter(self):
         return cvflow.misc.CvMultiPlot(nplot=len(self.plottableMembers)+1)
 
-    def showMembersFast(self, recurse=False, show=False, cmap=cv2.COLORMAP_PARULA, **textkwargs):
+    def showMembersFast(self, recurse=False, show=False, cmap=None, title=None, **textkwargs):
 
         which = self.plottableMembers
         if len(self.plottableMembers) == 0:
@@ -255,7 +255,28 @@ class MultistepOp(Op):
         shown = [self.plotter]
 
         for i, member in enumerate(self.plottableMembers):
-            self.plotter.subplot(member.value, i, cmap=cmap)
+            if cmap is None:
+                memberCmap = getattr(member, 'cmap', None)
+                plotCmap = memberCmap if memberCmap is not None else 'ocean'
+                if isinstance(plotCmap, str):
+                    plotCmap = dict(
+                        parula=cv2.COLORMAP_PARULA,
+                        autumn=cv2.COLORMAP_AUTUMN,
+                        bone=cv2.COLORMAP_BONE,
+                        jet=cv2.COLORMAP_JET,
+                        winter=cv2.COLORMAP_WINTER,
+                        rainbow=cv2.COLORMAP_RAINBOW,
+                        ocean=cv2.COLORMAP_OCEAN,
+                        summer=cv2.COLORMAP_SUMMER,
+                        spring=cv2.COLORMAP_SPRING,
+                        cool=cv2.COLORMAP_COOL,
+                        hsv=cv2.COLORMAP_HSV,
+                        pink=cv2.COLORMAP_PINK,
+                        hot=cv2.COLORMAP_HOT,
+                    )[plotCmap.lower()]
+                else:
+                    plotCmap = cmap
+            self.plotter.subplot(member.value, i, cmap=plotCmap)
             self.plotter.writeText(member.getSimpleName(), i, **textkwargs)
         self.plotter.clearRemaining(i)
 
@@ -268,7 +289,7 @@ class MultistepOp(Op):
 
         if show:
             for cmp in shown:
-                cmp.show()
+                cmp.show(title=title)
 
         return shown
 
