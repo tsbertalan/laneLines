@@ -28,7 +28,7 @@ class cached:
 
             # Retrieve or calculate and store the output.
             key = cacheKey(method.__name__, *args, **kwargs)
-            if key in cache.keys():
+            if key in cache:
                 out = cache[key]
             else:
                 out = method(innerSelf, *args, **kwargs)

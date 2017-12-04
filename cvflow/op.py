@@ -89,6 +89,8 @@ class Op:
 
     def invalidateCache(self):
         misc.clearCache(self)
+        for child in self.children:
+            child.invalidateCache()
 
     @property
     def parents(self):
