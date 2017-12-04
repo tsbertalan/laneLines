@@ -169,7 +169,7 @@ class CountSeekingThreshold(Boolean):
         self.addParent(parent)
         super().__init__()
         
-    @cached
+    @cached()
     def value(self):
         channel = self.parent().value
         goalCount = self.goalCount
@@ -226,7 +226,7 @@ class Perspective(Op):
         self.perspectiveTransformer = PerspectiveTransformer(**kwargs)
         super().__init__()
 
-    @cached
+    @cached()
     def value(self):
         return self.perspectiveTransformer(self.parent().value)
 
@@ -241,6 +241,6 @@ class Undistort(Op):
         if fit:
             self.undistortTransformer.fit(imgs)
 
-    @cached
+    @cached()
     def value(self):
         return self.undistortTransformer(self.parent().value)

@@ -27,7 +27,7 @@ class Lambda(Op):
         self.f = f
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         args = (arg.value for arg in self.parents)
         return self.f(*args)
@@ -138,7 +138,7 @@ class Blur(Op):
         super().__init__(**kwargs)
         self.isBoolean = False
 
-    @cached
+    @cached()
     def value(self):
         return cv2.GaussianBlur(self.parent().value, (self.ksize, self.ksize), 0)
 
@@ -156,7 +156,7 @@ class UnsharpMask(Op):
         super().__init__(**kwargs)
         self.isBoolean = False
 
-    @cached
+    @cached()
     def value(self):
         image = cv2.GaussianBlur(self.parent().value, (self.ksize, self.ksize), self.sigmax)
         return cv2.addWeighted(self.parent().value, 1.5, image, -.5, 0)
@@ -169,7 +169,7 @@ class CircleKernel(Mono, Static):
         self.falloff = falloff
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         kernel = cv2.getGaussianKernel(self.ksize, 0)
         kernel = (kernel * kernel.T > kernel.min() / self.falloff).astype('uint8')
@@ -198,7 +198,7 @@ class Convolve(Mono):
         self.ddepth = ddepth
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         return cv2.filter2D(
             self.parent().value, self.ddepth, self.kernel.value
@@ -219,7 +219,7 @@ class Dilate(Mono):
         self.iterations = iterations
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         return cv2.dilate(
             self.parent(0).value, self.parent(1).value, iterations=self.iterations,
@@ -240,7 +240,7 @@ class Erode(Mono):
         self.iterations = iterations
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         return cv2.erode(
             self.parent(0).value, self.parent(1).value, iterations=self.iterations
@@ -257,7 +257,7 @@ class Opening(Mono):
         self.addParent(kernel)
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         return cv2.morphologyEx(
             self.parent(0).value, self.parent(1).value, iterations=self.iterations
@@ -272,7 +272,7 @@ class Sobel(Op):
         self.ddepth = ddepth
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         if self.xy == 'x':
             xy = (1, 0)
@@ -307,7 +307,7 @@ class LessThan(_ElementwiseInequality):
 
     baseSymbol = '<'
 
-    @cached
+    @cached()
     def value(self):
         left, right = self.parents
         if self.orEqualTo:
@@ -320,7 +320,7 @@ class GreaterThan(_ElementwiseInequality):
 
     baseSymbol = '>'
 
-    @cached
+    @cached()
     def value(self):
         left, right = self.parents
         if self.orEqualTo:
@@ -342,7 +342,7 @@ class EqualTo(Boolean):
     def __str__(self):
         return '%s %s %s' % (self.parents[0], self.baseSymbol, self.parents[1])
 
-    @cached
+    @cached()
     def value(self):
         left, right = self.parents
         return left.value == right.value
@@ -358,7 +358,7 @@ class AsType(Op):
         super().__init__(**kwargs)
         self.node_properties['shape'] = 'circle'
 
-    @cached
+    @cached()
     def value(self):
         inarray = self.parent().value
         if self.kind == 'uint8' or self.kind == np.uint8 and self.scaleUintTo255:
@@ -384,7 +384,7 @@ class ScalarMultiply(Op):
         self.scalar = scalar
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         return self.parent().value * self.scalar
 
@@ -434,7 +434,7 @@ class EqualizeHistogram(Color):
         self.addParent(image)
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         img = np.copy(self.parent().value)
         for i in range(3):
@@ -486,7 +486,7 @@ class Divide(Arithmetic):
         self.zeroSpotsToMax = zeroSpotsToMax
         super().__init__(**kwargs)  
 
-    @cached
+    @cached()
     def value(self):
         left = self.parent(0).value
         right = np.copy(self.parent(1).value)
@@ -510,7 +510,7 @@ class Abs(Arithmetic):
         self.addParent(parent)
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         return abs(self.parent().value)
 
@@ -522,7 +522,7 @@ class Add(Arithmetic):
             self.addParent(parent)
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         out = 0
         for parent in self.parents:
@@ -537,7 +537,7 @@ class Subtract(Arithmetic):
         self.addParent(right)
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         return self.parent(0).value - self.parent(1).value
 
@@ -549,7 +549,7 @@ class Multiply(Arithmetic):
             self.addParent(parent)
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         out = 1
         for parent in self.parents:
@@ -568,7 +568,7 @@ class Pow(Arithmetic):
         super().__init__(**kwargs)
 
 
-    @cached
+    @cached()
     def value(self):
         return self.parent(0).value ** self.parent(1).value
 
@@ -587,7 +587,7 @@ class Max(Scalar):
         super().__init__(**kwargs)
 
 
-    @cached
+    @cached()
     def value(self):
         x = self.parent().value
         try:
@@ -603,7 +603,7 @@ class Min(Scalar):
         super().__init__(**kwargs)
 
 
-    @cached
+    @cached()
     def value(self):
         x = self.parent().value
         try:
@@ -655,7 +655,7 @@ class AndTwoInputs(Logical):
             raise AssertionError(msg + '.')
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         p1, p2 = self.parents
         if p1.isBoolean and p2.isBoolean:
@@ -696,7 +696,7 @@ class Or(Logical):
         self.addParent(parent2)
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         def tomono(color):
             if len(color.shape) == 3:

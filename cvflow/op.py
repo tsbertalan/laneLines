@@ -88,11 +88,7 @@ class Op:
             setattr(self, key, getattr(self, key, False))
 
     def invalidateCache(self):
-        for key in list(getattr(self, '__cache__', {}).keys()):
-            if not misc.protected(self, key):
-                self.__cache__.pop(key, None)
-        for child in self.children:
-            child.invalidateCache()
+        misc.clearCache(self)
 
     @property
     def parents(self):
@@ -133,7 +129,7 @@ class Op:
 
         return parent
 
-    @misc.cached
+    @misc.cached()
     def value(self):
         raise NotImplementedError('`self.value` not implemented for class %s.' % type(self).__name__)
 
@@ -523,7 +519,7 @@ class Op:
                 propTarget, self.getSimpleName()
             ))
 
-    @misc.cached
+    @misc.cached()
     def shape(self):
         if len(self.parents) > 0:
             shapes = [parent.shape for parent in self.parents if parent.shape is not None]

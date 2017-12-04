@@ -2,7 +2,7 @@ import graphviz
 
 import cvflow
 from cvflow import Op
-from cvflow.misc import cached, protectedCache
+from cvflow.misc import cached
 from cvflow.baseOps import *
 
 class PassThrough(Op):
@@ -88,7 +88,7 @@ class MultistepOp(Op):
         self.addParent(output)
         self._output = output
 
-    @cached
+    @cached()
     def value(self):
         return self.output.value
 
@@ -152,7 +152,7 @@ class MultistepOp(Op):
     def getMembersByType(self, Kind):
         return [m for m in self.members if isinstance(m, Kind)]
 
-    @protectedCache
+    @cached(categoryID='protected')
     def toposortMembers(self):
         toposort = self.assembleGraph().toposort()
         return [m for m in toposort if m in self.members]
@@ -229,7 +229,7 @@ class MultistepOp(Op):
 
         return shown
 
-    @protectedCache
+    @cached(categoryID='protected')
     def plottableMembers(self):
         return [
             m for m in self.toposortMembers
@@ -238,7 +238,7 @@ class MultistepOp(Op):
             and m.isVisualized
         ]
 
-    @protectedCache
+    @cached(categoryID='protected')
     def plotter(self):
         return cvflow.misc.CvMultiPlot(nplot=len(self.plottableMembers)+1)
 
@@ -297,7 +297,7 @@ class Pipeline(MultistepOp):
         # self.nodeName = 'Pipeline output'
         super().__init__(**kwargs)
 
-    @cached
+    @cached()
     def value(self):
         return self.output.value
 

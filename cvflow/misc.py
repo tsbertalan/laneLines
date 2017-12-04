@@ -7,49 +7,45 @@ def cacheKey(objname, *args, **kwargs):
     return '%s(*%s, **%s)' % (objname, args, kwargs)
 
 
-def _cached(method, mname=None):
-    if mname is None:
-        mname = method.__name__
-    def wrappedMethod(self, *args, **kwargs):
-        if not hasattr(self, '__cache__'):
-            self.__cache__ = {}
-        key = cacheKey(mname, *args, **kwargs)
-        if key in self.__cache__.keys():
-            out = self.__cache__[key]
-        else:
-            if method.__name__ == 'plotter':
-                print(
-                    'Cache miss; saving `%s(0x%x)`.`%s(0x%x)`.' % (
-                        self, id(self), method.__name__, id(method)
-                    )
-                )
-            out = method(self, *args, **kwargs)
-            self.__cache__[key] = out
-        return out
-    return wrappedMethod
+
+class cached:
+    
+    def __init__(self, categoryID=0, asProperty=True):
+        self.categoryID = categoryID
+        self.asProperty = asProperty
+        self.cacheAttributeName = '__cache__%s_' % self.categoryID
+        
+    def __call__(self, method):
+        
+        def wrappedMethod(innerSelf, *args, **kwargs):
+
+            # Retrieve or initialize the cache.
+            if not hasattr(innerSelf, self.cacheAttributeName):
+                cache = {}
+                setattr(innerSelf, self.cacheAttributeName, cache)
+            else:
+                cache = getattr(innerSelf, self.cacheAttributeName)
+
+            # Retrieve or calculate and store the output.
+            key = cacheKey(method.__name__, *args, **kwargs)
+            if key in cache.keys():
+                out = cache[key]
+            else:
+                out = method(innerSelf, *args, **kwargs)
+                cache[key] = out
+
+            # Return the output.
+            return out 
+
+        # If requested, make the method a property.
+        if self.asProperty:
+            wrappedMethod = property(wrappedMethod)
+            
+        return wrappedMethod
 
 
-def cached(method):
-    return property(_cached(method))
-
-
-def protected(self, key):
-    return getattr(self, '__protected__', {}).get(key, False)
-
-
-def _protectedCache(method):
-    def wrappedMethod(self, *args, **kwargs):
-        if not hasattr(self, '__protected__'):
-            self.__protected__ = {}
-        key = cacheKey(method.__name__, *args, **kwargs)
-        if key not in self.__protected__:
-            self.__protected__[key] = True
-        return method(self, *args, **kwargs)
-    return _cached(wrappedMethod, mname=method.__name__)
-
-
-def protectedCache(method):
-    return property(_protectedCache(method))
+def clearCache(owner, categoryID=0):
+    setattr(owner, '__cache__%d_' % categoryID, {})
 
 
 class NodeDigraph:
