@@ -112,7 +112,7 @@ class FullPipeline(Pipeline, Boolean):
 
         # Yellow-focused channels
         Y = [
-            ColorSplit(hsv, 1), ColorSplit(hls, 2), ColorSplit(hlseq, 2)
+            ColorSplit(hsv, 1), ColorSplit(hls, 2), ColorSplit(hlseq, 2), ColorSplit(lab, 2),
         ]
         # White-focused channels
         W = [

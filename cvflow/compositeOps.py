@@ -10,7 +10,7 @@ class DilateSobel(MultistepOp, Boolean):
     def __init__(self, singleChannelOrPreviousDilateSobel, **kwargs):
         defaults = dict(
             postdilate=True, preblurksize=13, sx_thresh=20, 
-            dilate_kernel=(2, 4), dilationIterations=3, reversed=False,
+            dilate_kernel=(2, 4), dilationIterations=10, reversed=False,
         )
         for k, v in defaults.items():
             kwargs.setdefault(k, v)
@@ -88,11 +88,15 @@ class DilateSobel(MultistepOp, Boolean):
 
     @stringFallback
     def __str__(self):
-        return 'DilateSobel(%s)' % ', '.join([
+        out = 'DilateSobel'
+        nonDefaults = [
             '%s=%s' % (k, getattr(self, k)) 
             for (k, v) in self.defaults.items()
             if getattr(self, k) != v
-        ])
+        ]
+        if len(nonDefaults) > 0:
+            out += '(%s)' % ', '.join(nonDefaults)
+        return out
 
 
 class SobelClip(MultistepOp, Boolean):
@@ -127,6 +131,7 @@ class SobelClip(MultistepOp, Boolean):
             sobel, threshold, narrow, wide, toSobel, clippedSobel
         ])
         super().__init__()
+
 
 class LightPatchRemover(MultistepOp, Boolean):
 
@@ -189,7 +194,7 @@ class Expand(MultistepOp, Mono):
         x3 = x2 ** power
         
         # Flip them back.
-        expanded = -abs(x3 & neglocs) + (x3 * poslocs)
+        expanded = -abs(x3 & neglocs) + (x3 & poslocs)
 
         # Maybe rescale between 0 and 1.
         if rescale:

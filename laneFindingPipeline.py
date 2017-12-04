@@ -707,7 +707,7 @@ class LaneFinder(object):
         centerline = np.mean([left(yeval), right(yeval)])
         return (imgWidth / 2. - centerline) * left.xm_per_pix
 
-    def draw(self, frame, call=True, showTrapezoid=True, showThresholds=True, insetBEV=True, showLane=True, showCurves=True, showCentroids=True):
+    def draw(self, frame, call=True, showTrapezoid=True, showThresholds=True, insetBEV=True, showLane=True, showCurves=False, showCentroids=True):
         if call:
             self(frame)
         preprocessed = self.colorFilter.output.value
