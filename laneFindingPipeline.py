@@ -8,6 +8,8 @@ from sklearn.pipeline import make_pipeline
 import matplotlib.pyplot as plt
 import tqdm
 
+import skvideo.io
+
 import cvflow as cf
 
 from utils import show, drawShape, isInteractive
@@ -16,8 +18,6 @@ import utils
 import smoothing
 
 from importlib import reload
-reload(utils)
-reload(smoothing)
 
 
 def window_mask(width, height, img_ref, center, level):
@@ -743,8 +743,6 @@ class LaneFinder(object):
             cv2.fillConvexPoly(laneCurve, np.int32([points.T]), (232, 119, 34))
             inset = cv2.addWeighted(inset, 1.0, laneCurve, 0.4, 0)
 
-        
-
         if showTrapezoid:
             x = self.perspective.dst[:, 0]
             y = self.perspective.dst[:, 1]
@@ -810,3 +808,61 @@ class LaneFinder(object):
             y += 50
 
         return composite
+
+    def drawSteps(self, frame, **drawKwargs):
+        drawing = self.draw(frame, **drawKwargs)
+        self.colorFilter.showMembersFast(show=False, recurse=False)
+        plotter = self.colorFilter.addExtraPlot(drawing)
+        return plotter.X
+
+    def watch(self,
+        filePathOrFrames, outFilePath, 
+        showSteps=False, maxframes=None, drawFrameNum=True, 
+        **tqdmKw
+        ):
+
+        # Make a frame reader object or just use the provided frames.
+        if isinstance(filePathOrFrames, str):
+            reader = skvideo.io.FFmpegReader(filePathOrFrames)
+            frameSource = reader.nextFrame()
+            total = reader.inputframenum
+        else:
+            frameSource = filePathOrFrames
+            total = len(frameSource)
+
+        # Cap the frames output.
+        total = min(total, maxframes) if maxframes is not None else total
+        tqdmKw['total'] = total
+
+        # Draw the frame and write the frame number on it.
+        def yieldFrames():
+            for frameNum, frame in enumerate(frameSource):
+                if frameNum == total:
+                    break
+                else:
+                    if showSteps:
+                        response = self.drawSteps(frame)
+                    else:
+                        response = self.draw(frame)
+                    cv2.putText(
+                        response,
+                        'Frame %d' % frameNum, 
+                        (response.shape[1] - 400, response.shape[0] - 64),
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        thickness=2,
+                        fontScale=2,
+                        color=(200, 200, 200),
+                        lineType=cv2.LINE_AA,
+                    )
+                    yield response
+
+        videoHtml = utils.saveVideo(
+            yieldFrames(),
+            outFilePath,
+            **tqdmKw
+            )
+        return videoHtml
+
+
+def dummy():
+    pass
