@@ -2,7 +2,7 @@ import graphviz
 
 import cvflow
 from cvflow import Op
-from cvflow.misc import cached
+from cvflow.misc import cached, makeSubgraph
 from cvflow.baseOps import *
 
 class PassThrough(Op):
@@ -102,7 +102,7 @@ class MultistepOp(Op):
         for k in 'color', 'style':
             if k in self.node_properties:
                 graph_attr[k] = self.node_properties[k]
-        label = d.add_subgraph(members, str(self), graph_attr=graph_attr)
+        label, _gv, _nx = makeSubgraph(members, str(self), graph_attr=graph_attr, supergraph=d)
         if self.nodeName is None:
             self.nodeName = label
             d.add_node(self)

@@ -254,27 +254,8 @@ class Op:
 
             # Add a key showing the styles of various node classes.
             if addKey:
-                def nn(Cls, nodeName, *args):
-                    op = Cls(*args)
-                    op.nodeName = nodeName
-                    return op
-
-                dummy = cvflow.baseOps.Constant(42)
-                dummy.hidden = True
-                class L(cvflow.Logical): pass
-                keyMembers = [
-                    nn(Op, 'Continuous'),
-                    nn(cvflow.Boolean, 'Binary'),
-                    nn(cvflow.Mono, 'Single channel'),
-                    nn(cvflow.Color, 'Three channel'),
-                    nn(cvflow.PassThrough, 'No-op', dummy),
-                    nn(cvflow.MultistepOp, 'multi-step result'),
-                    nn(L, 'Logical')
-                    #nn(cvflow.Constant, 'Constant', 42),
-                ]
-
-                d.add_subgraph(keyMembers, 'KEY', graph_attr=dict(color='gray', label='KEY'))
-
+                misc.makeKeySubgraph(d)
+                
         return d
 
     def _clearVisited(self):

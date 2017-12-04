@@ -89,21 +89,26 @@ def drawLine(x, y, canvas, **kwargs):
     )
 
 
-def loadFrames(videoPrefices=('project', 'challenge', 'harder_challenge'), maxFrames=None):
+def loadFrames(videoPrefices=('project', 'challenge', 'harder_challenge'), maxFrames=None, pbar=False):
     allFrames = {}
     for videoPrefix in videoPrefices:
         fpath = '%s_video.mp4' % videoPrefix
         reader = skvideo.io.FFmpegReader(fpath)
         frames = []
         actualMaxFrames = reader.inputframenum if maxFrames is None else maxFrames
-        bar = tqdm.tqdm_notebook(
-            total=actualMaxFrames,
-            desc='load %s' % videoPrefix,
-        )
+        if pbar:
+            bar = tqdm.tqdm_notebook(
+                total=actualMaxFrames,
+                desc='load %s' % videoPrefix,
+            )
+            update = bar.update
+        else:
+            update = lambda : None
+
         for frame in reader.nextFrame():
             if len(frames) == actualMaxFrames:
                 break
-            bar.update()
+            update()
             frames.append(frame)
         allFrames[videoPrefix] = frames
     return allFrames
