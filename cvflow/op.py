@@ -88,7 +88,9 @@ class Op:
             setattr(self, key, getattr(self, key, False))
 
     def invalidateCache(self):
-        self.__cache__ = {}
+        for key in list(getattr(self, '__cache__', {}).keys()):
+            if not misc.protected(self, key):
+                self.__cache__.pop(key, None)
         for child in self.children:
             child.invalidateCache()
 

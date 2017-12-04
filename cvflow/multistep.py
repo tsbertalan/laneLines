@@ -2,7 +2,7 @@ import graphviz
 
 import cvflow
 from cvflow import Op
-from cvflow.misc import cached
+from cvflow.misc import cached, protectedCache
 from cvflow.baseOps import *
 
 class PassThrough(Op):
@@ -152,7 +152,7 @@ class MultistepOp(Op):
     def getMembersByType(self, Kind):
         return [m for m in self.members if isinstance(m, Kind)]
 
-    @cached
+    @protectedCache
     def toposortMembers(self):
         toposort = self.assembleGraph().toposort()
         return [m for m in toposort if m in self.members]
@@ -222,12 +222,63 @@ class MultistepOp(Op):
             for p in [p for p in which if isinstance(p, cvflow.MultistepOp)]:
                 shown.extend(p.showMembers(
                     which='all', subplotKwargs=subplotKwargs, 
-                    excludeTypes=excludeTypes, showMultistepParents=True, 
+                    excludeTypes=excludeTypes, recurse=True, 
                     titleColor=multistepColors[p], _getColor=_getColor,
                     **kwargs
                 ))
 
         return shown
+
+    @protectedCache
+    def plottableMembers(self):
+        return [
+            m for m in self.toposortMembers
+            if m in self.members
+            and not m.isScalar
+            and m.isVisualized
+        ]
+
+    @protectedCache
+    def plotter(self):
+        return cvflow.misc.CvMultiPlot(nplot=len(self.plottableMembers)+1)
+
+    def showMembersFast(self, recurse=False, show=False, cmap=cv2.COLORMAP_PARULA, **textkwargs):
+
+        which = self.plottableMembers
+        if len(self.plottableMembers) == 0:
+            from warning import warn
+            warn('No members to visualize for %s.' % self)
+            return []
+
+        shown = [self.plotter]
+
+        for i, member in enumerate(self.plottableMembers):
+            self.plotter.subplot(member.value, i, cmap=cmap)
+            self.plotter.writeText(member.getSimpleName(), i, **textkwargs)
+        self.plotter.clearRemaining(i)
+
+        if recurse:
+            for p in [p for p in self.plottableMembers if isinstance(p, cvflow.MultistepOp)]:
+                shown.extend(p.showMembersFast(
+                    recurse=True, show=False, cmap=cmap,
+                    **textkwargs
+                ))
+
+        if show:
+            for cmp in shown:
+                cmp.show()
+
+        return shown
+
+    def addExtraPlot(self, image, title=None, show=False, **textkwargs):
+        self.plotter.subplot(image, len(self.plottableMembers))
+        if title is not None:
+            self.plotter.writeText(member.getSimpleName(), i, **textkwargs)
+
+        if show:
+            self.plotter.show()
+
+        return self.plotter
 
 
 class Pipeline(MultistepOp):
@@ -266,3 +317,4 @@ class Pipeline(MultistepOp):
         self.colorOutput.nodeName = 'Color pipeline output'
         self.members = [self.colorOutput]
         return self.colorOutput
+

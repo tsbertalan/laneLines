@@ -111,9 +111,6 @@ class MarkingFinder(object):
         # with the default guesses. We can then try the update again.
         if not self.evaluateFitQuality():
 
-            print('Some lane markings failed inspection!')
-            if recursionDepth > 0:
-                print('(recursion #%d)' % (recursionDepth,))
             if recursionDepth < maxRecursion:
                 self.update(image, recursionDepth=recursionDepth+1)
 

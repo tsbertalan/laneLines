@@ -66,15 +66,18 @@ def fig2img(fig):
     image = np.fromstring(canvas.tostring_rgb(), dtype='uint8').reshape(-1, width, 3)
     return image
 
+
 def isInteractive():
     """Are we in a notebook?"""
     import __main__ as main
     return not hasattr(main, '__file__')
 
+
 def bk():
     """Set a breakpoint; for use in Jupyter."""
     from IPython.core.debugger import set_trace
     set_trace()
+
 
 def drawLine(x, y, canvas, **kwargs):
     kwargs.setdefault('isClosed', False)
@@ -106,7 +109,7 @@ def loadFrames(videoPrefices=('project', 'challenge', 'harder_challenge'), maxfr
     return allFrames
 
 
-def transformVideo(filePathOrFrames, outPath, transformFunction, **tqdmKw):
+def transformVideo(filePathOrFrames, outPath, transformFunction, giveFrameNum=False, **tqdmKw):
 
     if isinstance(filePathOrFrames, str):
         reader = skvideo.io.FFmpegReader(filePathOrFrames)
@@ -120,4 +123,8 @@ def transformVideo(filePathOrFrames, outPath, transformFunction, **tqdmKw):
             total = len(frameSource)
             tqdmKw['total'] = total
 
-    return saveVideo((transformFunction(frame) for frame in frameSource), outPath, **tqdmKw)
+    if giveFrameNum:
+        f = lambda frame, frameNum: transformFunction(frame, frameNum=frameNum)
+    else:
+        f = lambda frame, frameNum: transformFunction(frame)
+    return saveVideo((f(frame, frameNum) for (frameNum, frame) in enumerate(frameSource)), outPath, **tqdmKw)
