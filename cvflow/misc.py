@@ -93,7 +93,7 @@ class NodeDigraph:
                 if self.containsEdge(member, child):
                     n2 = self._nid(child)
                     gvd.edge(n1, n2)
-        siblings.append((name, gvd, nx))
+        siblings.append((name, gvd, nx, members))
         self._gv.subgraph(gv)
         self._subgraphs[baseName] = siblings
         return label

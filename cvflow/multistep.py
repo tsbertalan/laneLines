@@ -145,9 +145,11 @@ class MultistepOp(Op):
         return set(members)
 
     @members.setter
-    def members(self, newmembers):
+    def members(self, newMembers):
         if not hasattr(self, '_members'): self._members = []
-        self._members.extend(newmembers)
+        self._members.extend(newMembers)
+        for member in newMembers:
+            setattr(member, 'containingMultistepOp', self)
 
     def getMembersByType(self, Kind):
         return [m for m in self.members if isinstance(m, Kind)]
@@ -279,6 +281,37 @@ class MultistepOp(Op):
             self.plotter.show()
 
         return self.plotter
+
+    def getSubgraph(self, outType='graphviz', **kwargs):
+        """Find the subgraphs which have this node as the container for all their members."""
+        nd = self.assembleGraph(**kwargs)
+        subgraphsForThisKind = []
+        for subgraphsForFocalKind in nd._subgraphs.values():
+            subgraph = subgraphsForFocalKind[0]
+            name, gvd, nx, members = subgraph
+            containers = [
+                cont for cont in 
+                [getattr(member, 'containingMultistepOp', None) for member in members]
+                if cont
+            ]
+            if len(containers) > 0 and all([cont is self for cont in containers]):
+                subgraphsForThisKind.append(subgraph)
+        assert len(subgraphsForThisKind) == 1
+        name, graph, nx, members = subgraphsForThisKind[0]
+        return dict(
+            graphviz=graph,
+            networkx=nx,
+            name=name,
+            members=members,
+            all=(name, graph, nx, members),
+        )[outType]
+
+    def saveSubgraphDrawing(self, savePath, format='png'):
+        graph = self.getSubgraph(format=format)
+        if savePath.lower().endswith('.%s' % format.lower()):
+            savePath = savePath[:-4]
+        graph.render(savePath)
+        return graph
 
 
 class Pipeline(MultistepOp):

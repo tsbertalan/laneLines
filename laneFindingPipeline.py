@@ -815,9 +815,9 @@ class LaneFinder(object):
         plotter = self.colorFilter.addExtraPlot(drawing)
         return plotter.X
 
-    def watch(self,
+    def process(self,
         filePathOrFrames, outFilePath, 
-        showSteps=False, maxframes=None, drawFrameNum=True, 
+        showSteps=False, maxFrames=None, drawFrameNum=True, 
         **tqdmKw
         ):
 
@@ -831,7 +831,7 @@ class LaneFinder(object):
             total = len(frameSource)
 
         # Cap the frames output.
-        total = min(total, maxframes) if maxframes is not None else total
+        total = min(total, maxFrames) if maxFrames is not None else total
         tqdmKw['total'] = total
 
         # Draw the frame and write the frame number on it.
