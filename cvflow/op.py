@@ -154,6 +154,8 @@ class Op:
         for k in which:
             l = dict(parents=self.parents, children=self.children)[k]
             for op in l:
+                if not hasattr(op, '_visited'):
+                    raise ValueError('%s has no _visited; might not have called super.__init__().' % op)
                 if not op._visited:
                     for op in op.walk(
                             currentRecursionDepth=currentRecursionDepth+1, 

@@ -816,7 +816,7 @@ class LaneFinder(object):
         return plotter.X
 
     def process(self,
-        filePathOrFrames, outFilePath, 
+        filePathOrFrames, outFilePath, frame0=0,
         showSteps=False, maxFrames=None, drawFrameNum=True, 
         **tqdmKw
         ):
@@ -846,7 +846,7 @@ class LaneFinder(object):
                         response = self.draw(frame)
                     cv2.putText(
                         response,
-                        'Frame %d' % frameNum, 
+                        'Frame %d' % (frameNum + frame0,), 
                         (response.shape[1] - 400, response.shape[0] - 64),
                         fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                         thickness=2,

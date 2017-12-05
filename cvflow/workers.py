@@ -244,3 +244,74 @@ class Undistort(Op):
     @cached()
     def value(self):
         return self.undistortTransformer(self.parent().value)
+
+
+class DenseOpticalFlow(Op):
+    """A stateful optical flow detector."""
+
+    def __init__(self, parent):
+        self.addParent(parent)
+        self.lastParentValue = None
+        self.lastFlow = None
+        super().__init__()
+
+    @cached()
+    def value(self):
+        x1 = self.parent().value
+        x0 = self.lastParentValue
+        self.lastParentValue = x1
+        if x0 is None:
+            out = np.ones_like(x1) * 128
+        else:
+            # copy parameters from https://docs.opencv.org/3.3.1/d7/d8b/tutorial_py_lucas_kanade.html
+            flow = cv2.calcOpticalFlowFarneback(
+                x0,  # prev
+                x1,  # next
+                self.lastFlow, # flow
+                0.5, # pyr_scale
+                3,   # levels
+                30,  # winsize
+                3,   # iterations 
+                7,   # poly_n
+                1.5, # poly_sigma
+                cv2.OPTFLOW_USE_INITIAL_FLOW    # 
+            )
+            self.lastFlow = flow
+            magnitude, angle = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+            out = magnitude
+        return out
+
+
+class SimplisticOpticalFlow(Op):
+    """A stateful optical flow detector; just the difference of frames."""
+
+    def __init__(self, parent):
+        self.addParent(parent)
+        self.lastParentValue = None
+        super().__init__()
+
+    @cached()
+    def value(self):
+        x1 = self.parent().value
+        x0 = self.lastParentValue
+        self.lastParentValue = x1
+        if x0 is None:
+            out = np.ones_like(x1) * 128
+        else:
+            out = x1 - x0
+        return out
+
+
+class RunningAverage(Op):
+
+    def __init__(self, parent, maxlen=10):
+        from collections import deque
+        self.addParent(parent)
+        self.storage = deque(maxlen=maxlen)
+        super().__init__()
+
+    @cached()
+    def value(self):
+        x = self.parent().value
+        self.storage.append(x)
+        return sum(self.storage) / len(self.storage)

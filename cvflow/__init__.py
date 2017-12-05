@@ -114,10 +114,11 @@ class FullPipeline(Pipeline, Boolean):
         lab = CvtColor(blurred, cv2.COLOR_RGB2LAB)
         b_channel = ColorSplit(lab, 2)
         gray = CvtColor(blurred, cv2.COLOR_RGB2GRAY)
+        
         sseq = Blur(ColorSplit(hlseq, 2), 71)
         sseq.nodeName = 'HL[S]-eq'
-        
-        
+
+
         # Define some extra style properties for
         # distguishing some node purposes in the plot.
         for op in hsv, hls, hlseq, lab:
@@ -215,7 +216,7 @@ class FullPipeline(Pipeline, Boolean):
 
         
         # Set the members.
-        colorspaces = hsv, hls, hlseq, gray#, lab
+        colorspaces = hsv, hls, hlseq, gray
         for it in [dynamic, self.output.nparent(2)], preprocessings, colorspaces, Y, W, restrictives.values():
             toInclude.extend(it)
         for it in permissives.values():
