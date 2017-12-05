@@ -351,11 +351,12 @@ class EqualTo(Boolean):
 
 class AsType(Op):
 
-    def __init__(self, parent, kind, scaleUintTo255=False, **kwargs):
+    def __init__(self, parent, kind, scaleUintTo255=False, maxDivisor=None, **kwargs):
         self.hidden = True
         self.addParent(parent)
         self.kind = kind
         self.scaleUintTo255 = scaleUintTo255
+        self.maxDivisor = maxDivisor
         super().__init__(**kwargs)
         self.node_properties['shape'] = 'circle'
 
@@ -365,7 +366,7 @@ class AsType(Op):
         if self.kind == 'uint8' or self.kind == np.uint8 and self.scaleUintTo255:
             inarray = inarray.astype('float64')
             inarray -= inarray.min()
-            m = inarray.max()
+            m = self.maxDivisor if self.maxDivisor is not None else inarray.max()
             if m != 0:
                 inarray /= m
                 inarray *= 255

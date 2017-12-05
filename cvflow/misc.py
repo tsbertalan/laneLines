@@ -390,13 +390,18 @@ class CvMultiPlot:
         drPix, dcPix = self.getResizedShape(row, col)
 
         # Get the dtype and output range right.
+        image = np.copy(image)
         if image.dtype != np.uint8:
-            if image.dtype == float:
+            if image.dtype in [float, np.float32, np.float64]:
                 image -= image.min()
-                image /= image.max()
+                m = image.max()
+                if m > 1:
+                    from warnings import warn
+                    warn('Using a non-unity scaling for float image data. This might cause flashing in output.')
+                image /= m if m > 1 else 1
             else:
                 assert image.dtype == bool
-            image = image.astype('uint8') * 255
+            image = (image*255).astype('uint8')
 
         # Apply colormaps and tilings to mono and boolean images.
         image = image.reshape((image.shape[0], image.shape[1], -1))
