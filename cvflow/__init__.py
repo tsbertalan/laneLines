@@ -95,58 +95,112 @@ class FullPipeline(Pipeline, Boolean):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         toInclude = []
+        
+        # A function to assign unique(?) keys to lists of ops.
+        h = lambda M: sum([hash(m) for m in M])
 
+        
         # Preprocess to get a smooth top-down view.
         undistort = Undistort(self.input)
         perspective = Perspective(undistort)
         blurred = Blur(perspective)
         preprocessings = undistort, perspective, blurred
 
+        
         # Extract some colorspaces.
         hsv = CvtColor(blurred, cv2.COLOR_RGB2HSV)
         hls = CvtColor(blurred, cv2.COLOR_RGB2HLS)
         hlseq = CvtColor(EqualizeHistogram(blurred), cv2.COLOR_RGB2HLS)
         lab = CvtColor(blurred, cv2.COLOR_RGB2LAB)
+        b_channel = ColorSplit(lab, 2)
         gray = CvtColor(blurred, cv2.COLOR_RGB2GRAY)
-        colorspaces = hsv, hls, hlseq, lab, gray
-
+        sseq = Blur(ColorSplit(hlseq, 2), 71)
+        sseq.nodeName = 'HL[S]-eq'
+        
+        
+        # Define some extra style properties for
+        # distguishing some node purposes in the plot.
+        for op in hsv, hls, hlseq, lab:
+            op.isVisualized = False
+        def setStyle(node, cmap, **styles):
+            if node.hidden:
+                node = node.parent()
+            node.setInstanceNodeProperties(**styles)
+            node.cmap = cmap
+        def ystyle(node):
+            setStyle(node, 'autumn', color='red', style='bold')
+        def wstyle(node):
+            setStyle(node, 'winter', fontcolor='blue')
+        
+            
         # Yellow-focused channels
         Y = [
-            ColorSplit(hsv, 1), ColorSplit(hls, 2), ColorSplit(hlseq, 2), ColorSplit(lab, 2),
+            Blur(ColorSplit(hsv, 1), 71), 
+            #ColorSplit(hls, 2), 
+            sseq, 
+            #b_channel,
         ]
+        for y in Y:
+            ystyle(y)
+            
+            
         # White-focused channels
         W = [
-            ColorSplit(hsv, 2), ColorSplit(hls, 1), gray, 
-            -Expand(Y[2]), ColorSplit(lab, 2)
+            ColorSplit(hsv, 2), 
+            ColorSplit(hls, 1), 
+            gray, 
+            #-Expand(sseq), 
+            #b_channel
         ]
+        for w in W:
+            wstyle(w)
+        styles = {h(Y): ystyle, h(W): wstyle}
 
-        h = lambda M: sum([hash(m) for m in M])
-
+        
         # Make a bunch of permissive masks.
         permissives = {}
         for X in (Y, W):
             permissives[h(X)] = []
             for x in X:
                 permissives[h(X)].append(DilateSobel(x))
+                
+                # Add the stylings.
+                styles[h(X)](permissives[h(X)][-1])
 
+                
         # Make the restrictive combinations.
         restrictives = {}
         for X in (Y, W):
-            restrictives[h(X)] = And(*permissives[h(X)])
+            key = h(X)
+            restrictives[key] = And(*permissives[key])
+            restrictive = restrictives[key]
+            styles[key](restrictive)
+            restrictive.nodeName = {
+                h(Y): 'yellow combined (&)', h(W): 'white combined (&)'
+            }[key]
+            
+            # Add the stylings.
+            {h(Y): ystyle, h(W): wstyle}[h(X)](restrictives[h(X)])
 
+            
         # Save for later examination.
         self.permissives = permissives
         self.restrictives = restrictives
 
+        
         # Also consider a conservative dynamic threshold.
         dynamic = CountSeekingThreshold(Y[0], goalCount=9000)
+        dynamic.nodeName = 'dynamic threshold'
 
+        
         # Make a color summary.
-        self.constructColorOutpout(dynamic, restrictives[h(Y)], restrictives[h(W)])
+        self.constructColorOutpout(restrictives[h(Y)], np.zeros((720, 1280)), restrictives[h(W)])
 
+        
         # Set the output.
         self.output = restrictives[h(Y)] | restrictives[h(W)] | dynamic
 
+        
         # Collect all the Ands that haven't been claimed by other multiops,
         # and don't visualize them.
         claimed = []
@@ -155,10 +209,13 @@ class FullPipeline(Pipeline, Boolean):
         ands = self.getByKind(AndTwoInputs)
         nonincluded = [a for a in ands if a not in claimed]
         for a in ands:
-            a.isVisualized = False
+            if a not in restrictives.values():
+                a.isVisualized = False
         self.includeInMultistep(nonincluded)
 
+        
         # Set the members.
+        colorspaces = hsv, hls, hlseq, gray#, lab
         for it in [dynamic, self.output.nparent(2)], preprocessings, colorspaces, Y, W, restrictives.values():
             toInclude.extend(it)
         for it in permissives.values():

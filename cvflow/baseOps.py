@@ -73,7 +73,8 @@ class ColorSplit(Mono):
             if len(out) != 3 or len(out) <= self.index:
                 out = originalOut
             else:
-                out = out[self.index] + ' channel'
+                i = self.index
+                out = out[:i] + '[' + out[i] + ']' + out[i+1:]
         return out
 
 
