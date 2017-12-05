@@ -308,15 +308,15 @@ class MultistepOp(Op):
         nd = self.assembleGraph(**kwargs)
         subgraphsForThisKind = []
         for subgraphsForFocalKind in nd._subgraphs.values():
-            subgraph = subgraphsForFocalKind[0]
-            name, gvd, nx, members = subgraph
-            containers = [
-                cont for cont in 
-                [getattr(member, 'containingMultistepOp', None) for member in members]
-                if cont
-            ]
-            if len(containers) > 0 and all([cont is self for cont in containers]):
-                subgraphsForThisKind.append(subgraph)
+            for subgraph in subgraphsForFocalKind:
+                name, gvd, nx, members = subgraph
+                containers = [
+                    cont for cont in 
+                    [getattr(member, 'containingMultistepOp', None) for member in members]
+                    if cont
+                ]
+                if len(containers) > 0 and all([cont is self for cont in containers]):
+                    subgraphsForThisKind.append(subgraph)
         assert len(subgraphsForThisKind) == 1
         name, graph, nx, members = subgraphsForThisKind[0]
         return dict(
