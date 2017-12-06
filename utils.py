@@ -9,28 +9,40 @@ import cv2
 import skvideo.io
 
 
-def showVid(fpath):
+def showAsHTML(fpath):
     """Display a video as a Jupyter HTML widget.
 
     Use a relative path that is accessible via the jupyter notebook webserver.
     """
     # Add a time argument to suggest that chrome shouldn't cache the video.
+    t = time.time()
+
+    # Display images with <image>.
+    for ext in '.png', '.gif', '.jpg', '.jpeg':
+        if fpath.lower().endswith(ext):
+            return HTML("""<image src="%s?time=%s" />""" % (fpath, t))
+
+    # Displaly videos with <video>.
     return HTML("""
-    <video width=100%% controls autoplay loop>
+    <video width=100%% controls loop>
       <source src="%s?time=%s" type="video/mp4">
     </video>
-    """ % (fpath, time.time()))
+    """ % (fpath, t))
 
 
 def saveVideo(frames, fpath, **tqdmKw):
     """Save a collection of images to a video file. I've tried .mp4 extensions."""
-    tqdmKw.setdefault('desc', os.path.basename(fpath))
-    tqdmKw.setdefault('unit', 'frame')
+    if tqdmKw.get('pbar', True):
+        tqdmKw.setdefault('desc', os.path.basename(fpath))
+        tqdmKw.setdefault('unit', 'frame')
+        pbar = tqdm.tqdm_notebook
+    else:
+        pbar = lambda x, **kw: x
     writer = skvideo.io.FFmpegWriter(fpath)
-    for frame in tqdm.tqdm_notebook(frames, **tqdmKw):
+    for frame in pbar(frames, **tqdmKw):
         writer.writeFrame(frame)
     writer.close()
-    return showVid(fpath)
+    return showAsHTML(fpath)
 
 
 def show(img, ax=None, title=None, clearTicks=True):
@@ -133,3 +145,23 @@ def transformVideo(filePathOrFrames, outPath, transformFunction, giveFrameNum=Fa
     else:
         f = lambda frame, frameNum: transformFunction(frame)
     return saveVideo((f(frame, frameNum) for (frameNum, frame) in enumerate(frameSource)), outPath, **tqdmKw)
+
+
+class ShowOpClip:
+
+    def __init__(self, frames):
+        self.frames = frames
+
+    def __call__(self, op):
+        pipeline = op.getByKind(cf.Pipeline, index=0)
+        
+        from os import system
+        import time
+        system('mkdir -p doc/images/')
+        fpath = 'doc/images/%s-%s.gif' % (type(pipeline).__name__, type(op).__name__)
+        
+        def f(frame):
+            pipeline(frame)
+            return op.showMembersFast(show=False)[0].X
+        return laneFindingPipeline.utils.transformVideo(self.frames, fpath, f, pbar=False)
+

@@ -82,6 +82,7 @@ class SimplePipeline(Pipeline, Boolean):
             l_binary, s_binary, markings_binary
         ])
 
+
 class MinimalPipeline(Pipeline, Boolean):
 
     def __init__(self, **kwargs):
@@ -89,6 +90,7 @@ class MinimalPipeline(Pipeline, Boolean):
         r_channel = ColorSplit(self.input, 0)
         self.output = r_channel > 100
         self.includeInMultistep([r_channel])
+
 
 class FullPipeline(Pipeline, Boolean):
 
@@ -136,7 +138,8 @@ class FullPipeline(Pipeline, Boolean):
             
         # Yellow-focused channels
         Y = [
-            Blur(ColorSplit(hsv, 1), 71), 
+            ColorSplit(hsv, 1),
+            # Blur(ColorSplit(hsv, 1), 71), 
             #ColorSplit(hls, 2), 
             sseq, 
             #b_channel,
@@ -222,3 +225,4 @@ class FullPipeline(Pipeline, Boolean):
         for it in permissives.values():
             toInclude.extend(it)
         self.includeInMultistep(toInclude)
+

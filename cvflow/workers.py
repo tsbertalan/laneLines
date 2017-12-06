@@ -6,9 +6,10 @@ from cvflow.misc import isInteractive
 class UndistortTransformer(object):
     """Remove barrel distortion given checkerboard calibration images."""
     
-    def __init__(self, nx=9, ny=6):
+    def __init__(self, nx=9, ny=6, pbar=False):
         self.nx = nx
         self.ny = ny
+        self.pbar = pbar
         
         self.singleObjP = np.zeros((nx*ny, 3), np.float32)
         self.singleObjP[:, :2] = np.mgrid[0:nx, 0:ny].T.reshape(-1, 2)
@@ -35,8 +36,11 @@ class UndistortTransformer(object):
             from glob import glob
             imgs = glob('camera_cal/*.jpg')
 
-        if isInteractive: bar = tqdm.tqdm_notebook
-        else: bar = tqdm.tqdm
+        if self.pbar:
+            if isInteractive: bar = tqdm.tqdm_notebook
+            else: bar = tqdm.tqdm
+        else:
+            bar = lambda x, **kw: x
         for img in bar(imgs, unit='frame', desc='cal. undistort'):
             self.fitImg(img)
         self.calcParams()
