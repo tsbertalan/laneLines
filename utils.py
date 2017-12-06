@@ -20,6 +20,7 @@ def showAsHTML(fpath):
     # Display images with <image>.
     for ext in '.png', '.gif', '.jpg', '.jpeg':
         if fpath.lower().endswith(ext):
+            print(fpath)
             return HTML("""<image src="%s?time=%s" />""" % (fpath, t))
 
     # Displaly videos with <video>.
