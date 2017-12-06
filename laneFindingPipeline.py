@@ -85,7 +85,8 @@ class MarkingFinder(object):
         left, right = self
         rads = [left.radius, right.radius]
         rads.sort()
-        if rads[1] / rads[0] > radiusRatioThresh:
+        radRat = rads[1] / rads[0] 
+        if radRat > radiusRatioThresh:
             acceptables = [False] * 2
 
         # The two fits aren't actually the same?
@@ -96,6 +97,24 @@ class MarkingFinder(object):
         thresholds = [10**-(k+1) for k in range(len(a))][::-1]
         if not (np.abs(a - b) > thresholds).any():
             acceptables = [False] * 2
+
+        # Assign quality scores.
+        print()
+        qualityFactors = 10, 1, 1; norm = sum(qualityFactors)
+        for i, laneMarking in enumerate(self):
+            mse = laneMarking.mse
+            n = len(laneMarking.x)
+            print('n=%d, e=%s, r=%s' % (n, mse, radRat))
+            qualityVec = (
+                n / 9001.,
+                100. / (mse if (mse != 0 and n > 2)  else np.inf),
+                3.0 / radRat,
+            )
+
+            laneMarking.quality = sum([q*fac/norm for (q, fac) in zip(qualityVec, qualityFactors)]) / len(qualityVec)
+            laneMarking.qualityVec = qualityVec
+
+            print(laneMarking.quality, laneMarking.qualityVec, acceptables[i])
 
         for i, acceptable in enumerate(acceptables):
             if not acceptable:
@@ -580,15 +599,19 @@ class LaneMarking(object):
             self.fit[-1] = x[0]
             self.worldFit = np.zeros((order+1,))
             self.worldFit[-1] = x[0] * xm_per_pix
+            self.mse = 0
         else:
             self.fit = regressPoly(y, x, order, ransac=ransac, lamb=lamb)
             self.worldFit = regressPoly(y * ym_per_pix, x * xm_per_pix, order, ransac=ransac, lamb=lamb)
+            self.mse = np.mean((self() - x)**2)
         self.order = order
         self.xm_per_pix = xm_per_pix
         self.ym_per_pix = ym_per_pix
         self.radiusYeval = radiusYeval
         self.imageSize = imageSize
         self.smoothers = smoothers
+        self.quality = float(len(x))
+        self.qualityVec = [1]*3
 
     def __call__(self, y=None, worldCoordinates=False):
         """Calculate y (row) as a function of x (column).
@@ -642,7 +665,7 @@ class LaneMarking(object):
     def update(self, otherMarking):
         weight = {}
         if isinstance(self.smoothers[0], smoothing.WeightedSmoother):
-            weight = {'weight': float(len(otherMarking.x))}
+            weight = {'weight': otherMarking.quality}
         self.fit = self.smoothers[0](otherMarking.fit, **weight)
         self.worldFit = self.smoothers[1](otherMarking.worldFit, **weight)
 
@@ -653,7 +676,7 @@ class LaneFinder(object):
     def __init__(self, 
         colorFilter=ColorFilter(),
         markingFinder=ConvolutionalMarkingFinder(),
-        Smoother=smoothing.BoxSmoother,
+        Smoother=smoothing.WeightedSmoother,
         ):
 
         # SET ALL CALLABLE ATTRIBUTES.
