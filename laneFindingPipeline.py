@@ -118,7 +118,11 @@ class MarkingFinder(object):
 class ConvolutionalMarkingFinder(MarkingFinder):
     """Search for lane markings with a convolution."""
     
-    def __init__(self, window_width=50, window_height=40, searchMargin=(75, 120), windowType='gaussian', gaussianRadius=1.5, verticalBias=0.25):
+    def __init__(self, 
+        window_width=50, window_height=40, 
+        searchMargin=(75, 120), 
+        windowType='gaussian', gaussianRadius=1.5, 
+        ):
         """
         Parameters
         ----------
@@ -135,7 +139,6 @@ class ConvolutionalMarkingFinder(MarkingFinder):
         self.window_height = window_height
         self.searchMargin = searchMargin
         self.windowType = windowType
-        self.verticalBias = verticalBias
         self.gaussianRadius = gaussianRadius
 
     def getSearchBoxes(self, centers, image, level, nlevels):
@@ -218,20 +221,9 @@ class ConvolutionalMarkingFinder(MarkingFinder):
                     # make that the new center.
                     center = np.argmax(bracketed) + lo
                 else:
-                    if level <= 1:
-                        # If this is just the first or second level, do nothing.
-                        center = centers[i]
-                    else:
-                        # Otherwise, do some simple linear projection.
-                        lastTwoCenters = window_centroids[i][level-2:level]
-                        d = lastTwoCenters[1] - lastTwoCenters[0]
-                        # If we keep finding nothing with each new level,
-                        # Let the difference taper off as we go, to avoid colliding
-                        # with the other lines.
-                        # This is a sort of regularization in favor of vertical lines.
-                        d *= self.verticalBias
-                        center = lastTwoCenters[1] + d
-
+                    # Do nothing.
+                    center = centers[i]
+                    
                 # Save centers for the next level.
                 centers[i] = center
 
