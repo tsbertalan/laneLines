@@ -8,6 +8,8 @@ from IPython.display import HTML
 import cv2
 import skvideo.io
 
+import jupyterTools
+
 
 def showAsHTML(fpath):
     """Display a video as a Jupyter HTML widget.
@@ -20,8 +22,10 @@ def showAsHTML(fpath):
     # Display images with <image>.
     for ext in '.png', '.gif', '.jpg', '.jpeg':
         if fpath.lower().endswith(ext):
-            print(fpath)
-            return HTML("""<image src="%s?time=%s" />""" % (fpath, t))
+            if fpath.lower().endswith('.gif'):
+                return jupyterTools.GIFforLatex(fpath)
+            else:
+                return HTML("""<image src="%s?time=%s" />""" % (fpath, t))
 
     # Displaly videos with <video>.
     return HTML("""
@@ -33,7 +37,7 @@ def showAsHTML(fpath):
 
 def saveVideo(frames, fpath, **tqdmKw):
     """Save a collection of images to a video file. I've tried .mp4 extensions."""
-    if tqdmKw.get('pbar', True):
+    if tqdmKw.pop('pbar', True):
         tqdmKw.setdefault('desc', os.path.basename(fpath))
         tqdmKw.setdefault('unit', 'frame')
         pbar = tqdm.tqdm_notebook
@@ -49,7 +53,7 @@ def saveVideo(frames, fpath, **tqdmKw):
 def show(img, ax=None, title=None, clearTicks=True):
     """Display an image without x/y ticks."""
     if ax is None:
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(16,9))
     ax.imshow(img)
     if clearTicks:
         ax.set_xticks([])
@@ -154,6 +158,8 @@ class ShowOpClip:
         self.frames = frames
 
     def __call__(self, op):
+        import cvflow as cf
+        import laneFindingPipeline
         pipeline = op.getByKind(cf.Pipeline, index=0)
         
         from os import system

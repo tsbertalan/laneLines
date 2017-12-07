@@ -120,14 +120,14 @@ class MarkingFinder(object):
         # Report to the caller whether all laneMarkings passed inspection.
         return np.all(acceptables)
 
-    def postUpdateQualityCheck(self, image, recursionDepth, maxRecursion=1):
+    def postUpdateQualityCheck(self, image, _recursionDepth, maxRecursion=1):
         # Check some quality metrics on the found lines.
         # If they're found lacking, the checker will replace them
         # with the default guesses. We can then try the update again.
         if not self.evaluateFitQuality():
 
-            if recursionDepth < maxRecursion:
-                self.update(image, recursionDepth=recursionDepth+1)
+            if _recursionDepth < maxRecursion:
+                self.update(image, _recursionDepth=_recursionDepth+1)
 
 
 class ConvolutionalMarkingFinder(MarkingFinder):
@@ -169,7 +169,7 @@ class ConvolutionalMarkingFinder(MarkingFinder):
             ))
         return searchBoxes
     
-    def update(self, image, recursionDepth=0):
+    def update(self, image, _recursionDepth=0):
         """
         Parameters
         ----------
@@ -289,7 +289,7 @@ class ConvolutionalMarkingFinder(MarkingFinder):
 
         self.window_centroids = window_centroids
 
-        self.postUpdateQualityCheck(image, recursionDepth)
+        self.postUpdateQualityCheck(image, _recursionDepth)
 
     def paint(self, warped):
         """Draw centroids on an image."""
@@ -718,7 +718,10 @@ class LaneFinder(object):
         centerline = np.mean([left(yeval), right(yeval)])
         return (imgWidth / 2. - centerline) * left.xm_per_pix
 
-    def draw(self, frame, call=True, showTrapezoid=True, showThresholds=True, insetBEV=True, showLane=True, showCurves=False, showCentroids=True):
+    def draw(self, frame, 
+        call=True, showTrapezoid=True, showThresholds=True, 
+        insetBEV=True, showLane=True, showCurves=False, showCentroids=True
+        ):
         if call:
             self(frame)
         preprocessed = self.colorFilter.output.value
@@ -757,7 +760,7 @@ class LaneFinder(object):
         if showTrapezoid:
             x = self.perspective.dst[:, 0]
             y = self.perspective.dst[:, 1]
-            utils.drawLine(x, y, inset, color=(255, 105, 180), isClosed=True)
+            utils.drawLine(x, y, inset, color=(255, 105, 180), isClosed=True, thickness=3)
 
         if showThresholds:
             inset = cv2.addWeighted(inset, 1.0, preprocessed_color, 1.0, 0)
@@ -829,7 +832,7 @@ class LaneFinder(object):
     def process(self,
         filePathOrFrames, outFilePath, frame0=0,
         showSteps=False, maxFrames=None, drawFrameNum=True, 
-        **tqdmKw
+        tqdmKw={'pbar': True}, **drawKwargs
         ):
 
         # Make a frame reader object or just use the provided frames.
@@ -852,9 +855,9 @@ class LaneFinder(object):
                     break
                 else:
                     if showSteps:
-                        response = self.drawSteps(frame)
+                        response = self.drawSteps(frame, **drawKwargs)
                     else:
-                        response = self.draw(frame)
+                        response = self.draw(frame, **drawKwargs)
                     cv2.putText(
                         response,
                         'Frame %d' % (frameNum + frame0,), 
@@ -874,6 +877,3 @@ class LaneFinder(object):
             )
         return videoHtml
 
-
-def dummy():
-    pass
