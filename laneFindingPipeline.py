@@ -99,12 +99,10 @@ class MarkingFinder(object):
             acceptables = [False] * 2
 
         # Assign quality scores.
-        print()
         qualityFactors = 10, 1, 1; norm = sum(qualityFactors)
         for i, laneMarking in enumerate(self):
             mse = laneMarking.mse
             n = len(laneMarking.x)
-            print('n=%d, e=%s, r=%s' % (n, mse, radRat))
             qualityVec = (
                 n / 9001.,
                 100. / (mse if (mse != 0 and n > 2)  else np.inf),
@@ -113,8 +111,6 @@ class MarkingFinder(object):
 
             laneMarking.quality = sum([q*fac/norm for (q, fac) in zip(qualityVec, qualityFactors)]) / len(qualityVec)
             laneMarking.qualityVec = qualityVec
-
-            print(laneMarking.quality, laneMarking.qualityVec, acceptables[i])
 
         for i, acceptable in enumerate(acceptables):
             if not acceptable:
@@ -664,7 +660,7 @@ class LaneMarking(object):
 
     def update(self, otherMarking):
         weight = {}
-        if isinstance(self.smoothers[0], smoothing.WeightedSmoother):
+        if isinstance(self.smoothers[0], smoothing.BoxSmoother):
             weight = {'weight': otherMarking.quality}
         self.fit = self.smoothers[0](otherMarking.fit, **weight)
         self.worldFit = self.smoothers[1](otherMarking.worldFit, **weight)
