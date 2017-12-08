@@ -576,7 +576,7 @@ class LaneMarking(object):
 
     def update(self, otherMarking):
         weight = {}
-        if isinstance(self.smoothers[0], smoothing.BoxSmoother):
+        if isinstance(self.smoothers[0], smoothing.WeightedSmoother):
             weight = {'weight': otherMarking.quality}
         self.fit = self.smoothers[0](otherMarking.fit, **weight)
         self.worldFit = self.smoothers[1](otherMarking.worldFit, **weight)
@@ -588,7 +588,7 @@ class LaneFinder(object):
     def __init__(self, 
         colorFilter=cf.FullPipeline(),
         markingFinder=ConvolutionalMarkingFinder(),
-        Smoother=smoothing.WeightedSmoother,
+        Smoother=smoothing.BoxSmoother,
         ):
         """
         Parameters
