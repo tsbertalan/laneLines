@@ -22,7 +22,6 @@ class src(object):
             self.fname += 'Lines %d throuh %d of ' % (a, b)
             self.fname += os.path.basename(inspect.getsourcefile(obj))
             self.fname += ':'
-            self.fname = '(%s)' % self.fname
         formatKwargs.setdefault('linenostart', self.location+start+1)
         formatKwargs.setdefault('linenos', 'inline')
         formatKwargs.setdefault('stripnl', False)
@@ -78,8 +77,12 @@ def propertySrc(op, propertyName='value', **kw):
     """
     fg = op.__class__.mro()[0].__dict__[propertyName].fget
     import types
-    if isinstance(fg, types.FunctionType):
-        return src(fg, **kw)
+    if fg.__name__ == 'wrappedMethod':
+        cells = fg.__closure__
+        for cell in cells:
+            try:
+                return src(cell.cell_contents, **kw)
+            except TypeError:
+                pass
     else:
-        return src(fg.__closure__[0].cell_contents, **kw)
-
+        return src(fg, **kw)
