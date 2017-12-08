@@ -92,6 +92,14 @@ class ColorJoin(Color):
             for ch in self.parents
         ])
 
+    @stringFallback
+    def __str__(self):
+        nameParents = [
+            par.parent() if isinstance(par, AsType) else par 
+            for par in self.parents
+        ]
+        return '[%s]' % (', '.join([par.getSimpleName() for par in nameParents]))
+
 
 class BaseImage(Op):
 

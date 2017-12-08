@@ -162,13 +162,12 @@ def transformChessboard(img, nx=9, ny=6):
 
 class CountSeekingThreshold(Boolean):
     
-    def __init__(self, parent, initialThreshold=150, goalCount=10000, countTol=None):
+    def __init__(self, parent, initialThreshold=150, goalCount=None, countTol=None):
         self.threshold = initialThreshold
-        self.goalCount = goalCount
-        self._defaultCountTol = 200
-        if countTol is None:
-            countTol = self._defaultCountTol
-        self.countTol = countTol
+        self._defaultgoalCount = 10000
+        self.goalCount = goalCount if goalCount is not None else self._defaultgoalCount
+        self._defaultcountTol = 200
+        self.countTol = countTol if countTol is not None else self._defaultcountTol
         self.iterationCounts = []
         self.addParent(parent)
         super().__init__()
@@ -217,10 +216,14 @@ class CountSeekingThreshold(Boolean):
         return mask
 
     def __str__(self):
-        paramsText = 'curr=%s' % self.threshold
-        if self.countTol != self._defaultCountTol:
-            paramsText ++ '; tol=%s' % self.countTol
-        return 'Thresh s.t. count=%d (%s)' % (self.goalCount, paramsText)
+        paramsText = ', '.join([
+            '%s=%s' % (k, getattr(self, k))
+            for k in ('countTol', 'goalCount')
+            if getattr(self, k) != getattr(self, '_default%s' % k)
+        ])
+        if len(paramsText) > 0:
+            paramsText = ' (%s)' % paramsText
+        return ('Thresh on "%s"' % self.parent().getSimpleName()) + paramsText
 
 
 class Perspective(Op):

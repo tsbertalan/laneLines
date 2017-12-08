@@ -118,7 +118,6 @@ class FullPipeline(Pipeline, Boolean):
         gray = CvtColor(blurred, cv2.COLOR_RGB2GRAY)
         
         sseq = Blur(ColorSplit(hlseq, 2), 71)
-        #sseq.nodeName = 'HL[S]-eq'
 
 
         # Define some extra style properties for
@@ -194,11 +193,10 @@ class FullPipeline(Pipeline, Boolean):
         
         # Also consider a conservative dynamic threshold.
         dynamic = CountSeekingThreshold(Y[0], goalCount=9000)
-        #dynamic.nodeName = 'dynamic threshold'
 
         
         # Make a color summary.
-        self.constructColorOutpout(restrictives[h(Y)], np.zeros((720, 1280)), restrictives[h(W)])
+        self.constructColorOutpout(restrictives[h(Y)], dynamic, restrictives[h(W)])
 
         
         # Set the output.
