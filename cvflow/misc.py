@@ -150,6 +150,8 @@ def makeKeySubgraph(supergraph=None):
 
     def nn(Cls, nodeName, *args):
         op = Cls(*args)
+        if Cls not in (cvflow.Color, cvflow.PassThrough):
+            op.isMono = True
         op.nodeName = nodeName
         return op
 
