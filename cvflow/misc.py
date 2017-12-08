@@ -7,7 +7,6 @@ def cacheKey(objname, *args, **kwargs):
     return '%s(*%s, **%s)' % (objname, args, kwargs)
 
 
-
 class cached:
     
     def __init__(self, categoryID=0, asProperty=True):
@@ -52,6 +51,21 @@ def _getNodeID(obj):
     return ''.join((str(id(obj)) + str(obj)).split())
 
 
+def _updateStyleDict(old, new):
+    out = dict(**old)
+    for k in new.keys():
+        if k in out and k in ('fontname', 'style'):
+            if k == 'fontname':
+                prep = lambda x: x
+            else:
+                prep = lambda x: x if isinstance(x, list) else [x]
+            oldk = prep(out[k])
+            newk = prep(new[k])
+            out[k] = oldk + newk
+        else:
+            out[k] = new[k]
+    return out
+
 def _getKw(obj):
     # Assemble the styling properties.
     kw = {}
@@ -61,6 +75,13 @@ def _getKw(obj):
     if obj.nodeName is not None:
         label = obj.nodeName
     kw['label'] = label
+    for k in kw.keys():
+        if isinstance(kw[k], list):
+            kw[k] = ','.join(kw[k])
+        elif k == 'fontname' and '-' not in kw[k]:
+            kw[k] = 'times-%s' % kw[k]
+        if 'italicbold' in kw[k]:
+            kw[k] = kw[k].replace('italicbold', 'bolditalic')
     return kw
 
 
@@ -104,9 +125,6 @@ def makeSubgraph(members, baseName, graph_attr={}, supergraph=None):
     nx = networkx.DiGraph()
 
     for member in members:
-        n1 = _getNodeID(member)
-
-    for member in members:
         kw = _getKw(member)
         n1 = _getNodeID(member)
         gvd.node(n1, **kw)
@@ -144,7 +162,7 @@ def makeKeySubgraph(supergraph=None):
         nn(cvflow.Mono, 'Single channel'),
         nn(cvflow.Color, 'Three channel'),
         nn(cvflow.PassThrough, 'No-op', dummy),
-        nn(cvflow.MultistepOp, 'multi-step result'),
+        nn(cvflow.MultistepOp, 'Multi-step'),
         nn(L, 'Logical')
         #nn(cvflow.Constant, 'Constant', 42),
     ]

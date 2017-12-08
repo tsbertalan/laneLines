@@ -101,7 +101,10 @@ class MultistepOp(Op):
         graph_attr = dict(shape='box', label=str(self))
         for k in 'color', 'style':
             if k in self.node_properties:
-                graph_attr[k] = self.node_properties[k]
+                att = self.node_properties[k]
+                if isinstance(att, list):
+                    att = ','.join(att)
+                graph_attr[k] = att
         label, _gv, _nx = makeSubgraph(members, str(self), graph_attr=graph_attr, supergraph=d)
         if self.nodeName is None:
             self.nodeName = label

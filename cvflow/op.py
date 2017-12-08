@@ -448,11 +448,10 @@ class Op:
     
     @property
     def node_properties(self):
-        out = {}
+        out = {'fontname': 'times-', 'style': []}
         for d in self._traits.values():
-            out.update(d)
-        out.update(getattr(self, '_node_properties', {}))
-        return out
+            out = misc._updateStyleDict(out, d)
+        return misc._updateStyleDict(out, getattr(self, '_node_properties', {}))
 
     def setInstanceNodeProperties(self, **newprops):
         oldprops = getattr(self, '_node_properties', {})
@@ -474,7 +473,7 @@ class Op:
     @Prop(disimplied=['isMono', 'isBoolean'], shape='box3d')
     def isColor(self): pass
     
-    @Prop(implied=['isMono'], fontname='italic', color='gray', )
+    @Prop(implied=['isMono'], fontname='italic')
     def isBoolean(self): pass
 
     @Prop(style='dashed')
