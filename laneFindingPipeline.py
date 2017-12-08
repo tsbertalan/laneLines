@@ -1,26 +1,20 @@
 import numpy as np
 import cv2
-
 from sklearn.linear_model import RANSACRegressor
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import make_pipeline
-
 import matplotlib.pyplot as plt
 import tqdm
-
 import skvideo.io
 
 import cvflow as cf
 
 from utils import show, drawShape, isInteractive
 import utils
-
 import smoothing
 
-from importlib import reload
 
-
-def window_mask(width, height, img_ref, center, level):
+def windowMask(width, height, img_ref, center, level):
     """Generate a boolean mask for a rectangular region."""
     href, wref = img_ref.shape[:2]
     output = np.zeros_like(img_ref)
@@ -65,7 +59,7 @@ class MarkingFinder(object):
     def __len__(self):
         return len(self.markings)
 
-    def update(self, image):
+    def update(self, image, _recursionDepth=0):
         raise NotImplementedError
 
     def evaluateFitQuality(self, lowPointsThresh=1, radiusRatioThresh=500):
@@ -134,29 +128,38 @@ class ConvolutionalMarkingFinder(MarkingFinder):
     """Search for lane markings with a convolution."""
     
     def __init__(self, 
-        window_width=50, window_height=40, 
+        windowWidth=50, windowHeight=40, 
         searchMargin=(75, 120), 
         windowType='gaussian', gaussianRadius=1.5, 
         ):
         """
         Parameters
         ----------
-        window_width : int, optional
-            Break image into (image_height / window_height) layers.
-
-        window_width : int, optional
+        windowWidth : int, optional
             Width of the kernel.
+
+        windowHeight : int, optional
+            Break image into (image_height / windowHeight) layers.
 
         searchMargin : int, optional
             How much to slide left and right for searching.
+
+        windowType : str, optional
+            Either 'gaussian' or 'box'. What kind of convolution kernel to use.
+
+        gaussianRadius : float, optional
+            If windowType=='gaussian', how wide the Gaussian should be. It's always
+            going to be windowWidth samples wide, but those will range from
+            -gaussianRadius to +gaussianRadius, evaluating exp(-x^2)
         """
-        self.window_width = window_width
-        self.window_height = window_height
+        self.windowWidth = windowWidth
+        self.windowHeight = windowHeight
         self.searchMargin = searchMargin
         self.windowType = windowType
         self.gaussianRadius = gaussianRadius
 
-    def getSearchBoxes(self, centers, image, level, nlevels):
+    def _getSearchBoxes(self, centers, image, level, nlevels):
+        """Reduce the whole image width into restricted search boxes given the previous centers."""
         searchBoxes = []
         searchMargin = self.searchMargin
         if hasattr(searchMargin, '__getitem__'):
@@ -170,21 +173,25 @@ class ConvolutionalMarkingFinder(MarkingFinder):
         return searchBoxes
     
     def update(self, image, _recursionDepth=0):
-        """
+        """Find lane markings in preprocessed image.
+
         Parameters
         ----------
         image : ndarray
 
-        Returns
-        -------
-        window_centroids : list of lists
+        (Ignore _recursionDepth)
+
+        Sets attributes
+        ---------------
+        self.markings : list
+            The found LaneMarking objects
+        self.windowCentroids : list of lists
             Column (x) locations of the found window centroids
         """
-
-        window_width = self.window_width
-        window_height = self.window_height
+        windowWidth = self.windowWidth
+        windowHeight = self.windowHeight
         gaussianRadius = self.gaussianRadius
-        nlevels = int(image.shape[0] / window_height)
+        nlevels = int(image.shape[0] / windowHeight)
 
         # Refer to a common set of nonzero pixels.
         nonzero = image.nonzero()
@@ -193,17 +200,17 @@ class ConvolutionalMarkingFinder(MarkingFinder):
 
         ## Store some things per-marking, per-level.
         # Store the window centroid positions per level.
-        window_centroids = [[None] * nlevels for m in self]
+        windowCentroids = [[None] * nlevels for m in self]
         # Store the included pixel indices.
         lane_inds = [[None] * nlevels for m in self]
 
         # Create our window template that we will use for convolutions.
         if self.windowType == 'gaussian':
             # Gaussian window
-            window = np.exp(-np.linspace(-gaussianRadius, gaussianRadius, window_width)**2)
+            window = np.exp(-np.linspace(-gaussianRadius, gaussianRadius, windowWidth)**2)
         else:
             # Box window.
-            window = np.ones(window_width)
+            window = np.ones(windowWidth)
 
         # Get an initial guess for the centers.
         centers = [initialGuessMarking(image.shape[0]) for initialGuessMarking in self]
@@ -214,9 +221,9 @@ class ConvolutionalMarkingFinder(MarkingFinder):
             # Sum over rows in this horizontal slice 
             # to get the scaled mean row.
             image_layer = np.sum(image[
-                int(image.shape[0]-(level+1)*window_height)
+                int(image.shape[0]-(level+1)*windowHeight)
                 :
-                int(image.shape[0]-level*window_height)
+                int(image.shape[0]-level*windowHeight)
                 ,:
             ], axis=0)
 
@@ -224,7 +231,7 @@ class ConvolutionalMarkingFinder(MarkingFinder):
             conv_signal = np.convolve(window, image_layer, mode='same')
 
             # Find the best left centroid by using past center as a reference.
-            searchBoxes = self.getSearchBoxes(centers, image, level, nlevels)
+            searchBoxes = self._getSearchBoxes(centers, image, level, nlevels)
 
             # Find the best centroids by using past centers as references.
             # TODO: If the bracketed portion is all-zero, consider that maybe this method has failed.
@@ -243,13 +250,13 @@ class ConvolutionalMarkingFinder(MarkingFinder):
                 centers[i] = center
 
                 ## Save our results for this level.
-                window_centroids[i][level] = center
+                windowCentroids[i][level] = center
 
                 # Identify window boundaries in x and y (and right and left).
-                win_y_low = image.shape[0] - (level+1)*window_height
-                win_y_high = image.shape[0] - level*window_height
-                win_x_low = center - window_width / 2
-                win_x_high = center + window_width / 2
+                win_y_low = image.shape[0] - (level+1)*windowHeight
+                win_y_high = image.shape[0] - level*windowHeight
+                win_x_low = center - windowWidth / 2
+                win_x_high = center + windowWidth / 2
                 
                 # Identify the nonzero pixels in x and y within the window.
                 good_inds = (
@@ -287,19 +294,19 @@ class ConvolutionalMarkingFinder(MarkingFinder):
             for points in markingsPoints
         ]
 
-        self.window_centroids = window_centroids
+        self.windowCentroids = windowCentroids
 
         self.postUpdateQualityCheck(image, _recursionDepth)
 
     def paint(self, warped):
         """Draw centroids on an image."""
         assert len(warped.shape) == 2, '`warped` should be single-channel'
-        window_width = self.window_width
-        window_height = self.window_height
+        windowWidth = self.windowWidth
+        windowHeight = self.windowHeight
         
-        if not hasattr(self, 'window_centroids'):
+        if not hasattr(self, 'windowCentroids'):
             self.update(warped)
-        window_centroids = self.window_centroids
+        windowCentroids = self.windowCentroids
 
         output = np.dstack((warped, warped, warped)) # making the original road pixels 3 color channels
 
@@ -307,25 +314,25 @@ class ConvolutionalMarkingFinder(MarkingFinder):
         points = np.zeros_like(warped)
 
         # Go through each level and draw the windows    
-        nlevels = int(warped.shape[0] / window_height)
+        nlevels = int(warped.shape[0] / windowHeight)
         for level in range(0, nlevels):
 
             # Iterate over lane markings.
             for i in range(len(self)):
 
                 # Window_mask is a function to draw window areas
-                mask = window_mask(window_width, window_height, warped, window_centroids[i][level],level)
+                mask = windowMask(windowWidth, windowHeight, warped, windowCentroids[i][level],level)
 
                 # Do some drawing.
                 if level > 0:
-                    centers = [xx[level] for xx in window_centroids]
-                    bounds = self.getSearchBoxes(centers, warped, level, nlevels)
+                    centers = [xx[level] for xx in windowCentroids]
+                    bounds = self._getSearchBoxes(centers, warped, level, nlevels)
 
                     # Draw search box.
                     href = warped.shape[0]
                     perimeter = np.int32([np.stack([
                         [bounds[i][0], bounds[i][1], bounds[i][1], bounds[i][0]],
-                        [href-level*window_height, href-level*window_height, href-(level+1)*window_height, href-(level+1)*window_height]
+                        [href-level*windowHeight, href-level*windowHeight, href-(level+1)*windowHeight, href-(level+1)*windowHeight]
                     ]).T])
                     cv2.polylines(output, perimeter, isClosed=True, color=(255, 0, 0), thickness=4)
 
@@ -367,18 +374,18 @@ class MarginSearchMarkingFinder(MarkingFinder):
         self.margin = margin
 
     def update(self, img):
-        """Margin search method
+        """Find lane markings in preprocessed image.
 
         Parameters
         ----------
-        img : ndarray
-        previousLaneMarkings : list of LaneMarking
-            Zero or more (probably two) LaneMarking objects.
+        image : ndarray
 
-        Returns
-        -------
-        points : list of ndarrays
-            Zero or more coordinate arrays of shape (2, n)
+        (Ignore _recursionDepth)
+
+        Sets attributes
+        ---------------
+        self.markings : list
+            The found LaneMarking objects
         """
 
         # Find the points highlighted by our thresholding.
@@ -416,177 +423,51 @@ class MarginSearchMarkingFinder(MarkingFinder):
         ]
 
 
-def circleKernel(ksize):
-    kernel = cv2.getGaussianKernel(ksize, 0)
-    kernel = (kernel * kernel.T > kernel.min()/3).astype('uint8')
-    return kernel
-
-
-def morphologicalSmoothing(img, ksize=20):
-    # For binary images only.
-    # Circular kernel:
-    kernel = cv2.getGaussianKernel(ksize, 0)
-    kernel * kernel.T > kernel.min() / 3
-    # Close holes:
-    img = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel)
-    # Despeckle:
-    img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel)
-    return img
-
-
-class ColorFilter(object):
-    """Apply a mixture of color or texture thresholdings to a warped image."""
- 
-    def __init__(self, 
-        s_thresh=(170, 255), l_thresh=(200, 255), sx_thresh=20, 
-        dilate_kernel=(2, 4), dilationIterations=3, blurSize=(5,5)
-        ):
-        """
-        Parameters
-        ----------
-        s_thresh : tuple of int, optional
-            Lower and upper bounds on S (saturation) channel.
-            Picks up colorful road markings (like bright yellow centerlines).
-
-        sx_thresh : int, optional
-            -Lower and upper bounds on sobel-x.
-            Picks up strongly vertical edges.
-
-        """
-        self.s_thresh = s_thresh
-        self.l_thresh = l_thresh
-        self.sx_thresh = sx_thresh
-        self.dilate_kernel = dilate_kernel
-        self.dilationIterations = dilationIterations
-        self.blurSize = blurSize
-
-    def dilateSobel(self, singleChannel, postdilate=True, preblurksize=13):
-        sx_thresh = self.sx_thresh
-        dilate_kernel = self.dilate_kernel
-        dilationIterations = self.dilationIterations
-
-        # Add a little *more* blurring.
-        singleChannel = cv2.GaussianBlur(singleChannel, (preblurksize, preblurksize), 0)
-
-        sobelx = cv2.Sobel(singleChannel, cv2.CV_64F, 1, 0) # Take the derivative in x
-
-        # Sobel mask.
-        mask_neg = (sobelx < -sx_thresh).astype(np.float32)
-        mask_pos = (sobelx > sx_thresh).astype(np.float32)
-
-        mid = dilate_kernel[1] // 2
-        # Dilate mask to the left.
-        kernel = np.ones(dilate_kernel, np.uint8)
-        kernel[:, 0:mid] = 0
-        dmask_neg = cv2.dilate(mask_neg, kernel, iterations=dilationIterations) > 0.
-        # Dilate mask to the right.
-        kernel = np.ones(dilate_kernel, np.uint8)
-        kernel[:, mid:] = 0
-        dmask_pos = cv2.dilate(mask_pos, kernel, iterations=dilationIterations) > 0.
-        sxbinary = (dmask_pos & dmask_neg).astype(np.uint8)
-
-        if postdilate:
-            sxbinary = cv2.dilate(sxbinary, circleKernel(5), iterations=1)
-
-        return sxbinary
-
-    def __call__(self, img, color=False):
-        """
-        Parameters
-        ----------
-        img : ndarray
-        color : bool, optional
-            If False, all filters will be combined into one boolean (0 or 255) array.
-        """
-        # Get channels.
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-        hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
-        l_channel = hls[:, :, 1]
-        s_channel = hls[:, :, 2]
-        s_eq_channel = cv2.equalizeHist(s_channel)
-
-        # Erode a mask on light areas. This provides a mask
-        # to exclude edges due to shadow.
-        shadowMask = cv2.erode((gray > 16).astype('uint8'), circleKernel(10), iterations=15)
-
-        # Look for colorful lines.
-        s_thresh = self.s_thresh
-        s_binary = s_channel > s_thresh[0]
-        if s_thresh[1] < 255:
-            s_binary = s_binary & (s_channel < s_thresh[1])
-        s_binary = s_binary & shadowMask
-
-        # Look for less-colorful lines, but only the vertical correct-width ones.
-        #s_eq_binary = 
-
-        # Look for bright lines
-        l_thresh = self.l_thresh
-        l_binary = l_channel > l_thresh[0]
-        if l_thresh[1] < 255:
-            l_binary = l_binary & (l_channel < l_thresh[1])
-        l_binary = l_binary & shadowMask
-
-        # Compile the features into an output image.
-        color_binary = np.dstack((
-            np.zeros_like(s_binary), # R
-            l_binary,                # G
-            s_binary,                # B
-        )) * 255
-        if color:
-            return color_binary.astype('uint8')
-        else:
-            cb = color_binary
-            # TODO: Why is this still an 8-bit array? Would numpy pack it better if it was truly boolean?
-            return cb.sum(axis=-1).astype('uint8') * 255
-
-
-def regressPoly(x, y, order, ransac=False, lamb=0.5):
-    # scikit-learn.org/stable/auto_examples/linear_model/plot_robust_fit.html#sphx-glr-auto-examples-linear-model-plot-robust-fit-py
-    # scikit-learn.org/stable/modules/generated/sklearn.linear_model.RANSACRegressor.html
-    if lamb == 0:
-        if not ransac:
-            return np.polyfit(x, y , order)
-        else:
-            estimator = RANSACRegressor(random_state=42, min_samples=.8, max_trials=300)
-            model = make_pipeline(PolynomialFeatures(order), estimator)
-            model.fit(x.reshape(x.size, 1), y)
-            return model._final_estimator.estimator_.coef_[::-1]
-    else:
-        A = np.stack([np.asarray(x).ravel()**k for k in range(order+1)[::-1]]).T
-        n_col = A.shape[1]
-        fit, residuals, rank, s = np.linalg.lstsq(
-            A.T.dot(A) + lamb * np.identity(n_col), 
-            A.T.dot(y)
-        )
-        return fit
-
-
 class LaneMarking(object):
     """Convenince class for storing polynomial fit and pixels for a lane marking."""
     # TODO: Try using a histogram of y values to classify broken and solid markings.
 
     def __init__(self, points=None, 
-        order=2, xm_per_pix=3.6576/628.33, ym_per_pix=18.288/602, radiusYeval=720,
-        imageSize=(720, 1280), ransac=False, lamb=.5, smoothers=(lambda x: x, lambda x: x)):
+        order=2,
+        ransac=False, lamb=.5, 
+        smoothers=(lambda x: x, lambda x: x)
+        ):
         """
         Parameters
         ----------
         points : ndarray, shape (2, n)
             Associated pixel locations
-
         order : int, optional
             Order for the fitting polynomial. Probably don't want to mess with this.
+        ransac : bool, optional
+            Whether to use RANSAC or normal polynomial regression.
+        lamb : float, optional
+            L2 regularization coefficient.
+        smoothers : tuple of two callables
+            Functions that take in a coefficient vector and return a vector 
+            of the same size, perhaps with some stateful smoothing applied.
+
         """
+
         # Default case for no-argument construction
+        self.imageSize = (720, 1280)
         if points is None:
             self.initialized = False
-            points = [[imageSize[1]/2]*10, np.linspace(0, imageSize[0], 10)]
+            points = [[self.imageSize[1]/2]*10, np.linspace(0, self.imageSize[0], 10)]
         else:
             self.initialized = True
-
+        
         points = np.asarray(points)
         assert points.shape[0] == 2
         self.x, self.y = x, y = points
+        self.order = order
+        self.xm_per_pix = 3.6576/628.33
+        self.ym_per_pix = 18.288/602
+        self.radiusYeval = 720
+        self.smoothers = smoothers
+        self.quality = float(len(x))
+        self.qualityVec = [None]*3
+
         # TODO: Use RANSAC to do the fitting.
         # Construct the fits by hand if a vertical line is given,
         # to avoid RankWarning from numpy.
@@ -594,20 +475,54 @@ class LaneMarking(object):
             self.fit = np.zeros((order+1,))
             self.fit[-1] = x[0]
             self.worldFit = np.zeros((order+1,))
-            self.worldFit[-1] = x[0] * xm_per_pix
+            self.worldFit[-1] = x[0] * self.xm_per_pix
             self.mse = 0
         else:
-            self.fit = regressPoly(y, x, order, ransac=ransac, lamb=lamb)
-            self.worldFit = regressPoly(y * ym_per_pix, x * xm_per_pix, order, ransac=ransac, lamb=lamb)
+            self.fit = self.regressPoly(y, x, order, ransac=ransac, lamb=lamb)
+            self.worldFit = self.regressPoly(y * self.ym_per_pix, x * self.xm_per_pix, order, ransac=ransac, lamb=lamb)
             self.mse = np.mean((self() - x)**2)
-        self.order = order
-        self.xm_per_pix = xm_per_pix
-        self.ym_per_pix = ym_per_pix
-        self.radiusYeval = radiusYeval
-        self.imageSize = imageSize
-        self.smoothers = smoothers
-        self.quality = float(len(x))
-        self.qualityVec = [1]*3
+
+    @staticmethod
+    def regressPoly(x, y, order, ransac=False, lamb=0.5):
+        """Regress a polynomial for y = f(x).
+
+        Parameters
+        ----------
+        x : iterable, length n
+            Independent/predictor variable
+        y : iterable, length n
+            Dependent/response variable
+        order : int
+            Polynomial order
+        ransac : bool, optional
+            Whether to use RANSAC robust regression
+        lamb : float, optional
+            L2 regularization coefficient
+
+        Returns
+        -------
+        fit : ndarray, length order+1
+            The monomial coefficients in decreasing-power order.
+
+        """
+        # scikit-learn.org/stable/auto_examples/linear_model/plot_robust_fit.html
+        # scikit-learn.org/stable/modules/generated/sklearn.linear_model.RANSACRegressor.html
+        if lamb == 0:
+            if not ransac:
+                return np.polyfit(x, y , order)
+            else:
+                estimator = RANSACRegressor(random_state=42, min_samples=.8, max_trials=300)
+                model = make_pipeline(PolynomialFeatures(order), estimator)
+                model.fit(x.reshape(x.size, 1), y)
+                return model._final_estimator.estimator_.coef_[::-1]
+        else:
+            A = np.stack([np.asarray(x).ravel()**k for k in range(order+1)[::-1]]).T
+            n_col = A.shape[1]
+            fit, residuals, rank, s = np.linalg.lstsq(
+                A.T.dot(A) + lamb * np.identity(n_col), 
+                A.T.dot(y)
+            )
+            return fit
 
     def __call__(self, y=None, worldCoordinates=False):
         """Calculate y (row) as a function of x (column).
@@ -648,6 +563,7 @@ class LaneMarking(object):
 
     @property
     def radius(self):
+        """Radius of curvature near the camera, in meters."""
         yeval = self.radiusYeval * self.ym_per_pix
         fit = np.poly1d(self.worldFit)
         xp = np.polyder(fit,  m=1)
@@ -670,10 +586,22 @@ class LaneFinder(object):
     """Stateful lane-marking finder for hood camera video."""
     
     def __init__(self, 
-        colorFilter=ColorFilter(),
+        colorFilter=cf.FullPipeline(),
         markingFinder=ConvolutionalMarkingFinder(),
         Smoother=smoothing.WeightedSmoother,
         ):
+        """
+        Parameters
+        ----------
+        colorFilter : callable, optional
+            Should ingest a three-channel image array 
+            and return a single-channel boolean mask on lane-marking pixels.
+        markingFinder : MarkingFinder, optional
+        Smoother : type, optional
+            Subclass of smoothing.Smoother that will be instantiated without
+            arguments when creating LaneMarking objects.
+
+        """
 
         # SET ALL CALLABLE ATTRIBUTES.
         
@@ -695,9 +623,11 @@ class LaneFinder(object):
         )
 
     def preprocess(self, frame, color=False):
+        """Convert a camera image to a perspective-transformed mask on lane-marking pixels."""
         return self.colorFilter(frame, color=color)
 
     def update(self, preprocessed):
+        """Update self.laneMarkings with preprocessed marking pixels mask."""
         self.markingFinder.update(preprocessed)
         newLaneMarkings = self.markingFinder.markings
         for oldLaneMarking, newLaneMarking in zip(self.laneMarkings, newLaneMarkings):
@@ -705,6 +635,7 @@ class LaneFinder(object):
         return self.laneMarkings
      
     def __call__(self, frame):
+        """Update and return self.laneMarkings with camera frame."""
         # Do our preprocessing.
         preprocessed = self.preprocess(frame)
         
@@ -715,6 +646,7 @@ class LaneFinder(object):
         return self.laneMarkings
 
     def metersRightOfCenter(self, left, right, yeval=720, imgWidth=1280):
+        """Deviation of camera center from lane center, in meters."""
         centerline = np.mean([left(yeval), right(yeval)])
         return (imgWidth / 2. - centerline) * left.xm_per_pix
 
@@ -722,6 +654,32 @@ class LaneFinder(object):
         call=True, showTrapezoid=True, showThresholds=True, 
         insetBEV=True, showLane=True, showCurves=False, showCentroids=True
         ):
+        """Visualize.
+
+        Parameters
+        ----------
+        frame : ndarray
+            The camera image
+        call : bool, optional
+            Whether to do self(frame), updating the laneMarkings
+        showTrapezoid : bool, optional
+            Whether to show the trapezoid representing the perspective transform
+        showThresholds : bool, optional
+            Whether to show the pixels identified by the preprocessing
+        insetBEV : bool, optional
+            Whether to show the birds-eye-view inset
+        showLane : bool, optional
+            Whether to show the foudn lane-shape overlay
+        showCurves : bool, optional
+            Whether to draw the marking polynomials as thick curves
+        showCentroids : bool, optional
+            Whether to show the boxes identified by the MarkingFinder
+
+        Returns
+        -------
+        composite : ndarray
+            Color image with all the drawn features.
+        """
         if call:
             self(frame)
         preprocessed = self.colorFilter.output.value
@@ -824,6 +782,16 @@ class LaneFinder(object):
         return composite
 
     def drawSteps(self, frame, **drawKwargs):
+        """Visualize the preprocessing steps.
+        
+        Parameters
+        ----------
+        frame : ndarray
+            The camera image
+        **drawKwargs
+            Other keyword arguments are passed on to draw()
+
+        """
         drawing = self.draw(frame, **drawKwargs)
         self.colorFilter.showMembersFast(show=False, recurse=False)
         plotter = self.colorFilter.addExtraPlot(drawing)
@@ -834,6 +802,33 @@ class LaneFinder(object):
         showSteps=False, maxFrames=None, drawFrameNum=True, 
         tqdmKw={'pbar': True}, **drawKwargs
         ):
+        """Process all frames in a video.
+
+        Parameters
+        ----------
+        filePathOrFrames : str or list
+            Either a list of ndarray camera frames, or a path to a video file
+        outFilePath : str
+            Path to output video or GIF file
+        frame0 : int, optional
+            Frame number of the first frame, for drawFrameNum
+        showSteps : bool, optional
+            Whether to use drawSteps instead of draw.
+        maxFrames : int, optional
+            Limit on number of frames to process
+        drawFrameNum : bool, optional
+            Whether to draw the frame number in the corner of the output.
+        tqdmKw : dict, optional
+            Passed on as keyword arguments to the video saver
+        **drawKwargs
+            Passed on to the drawing method.
+
+        Returns
+        -------
+        videoHtml
+            An object that implements _repr_html_, for easy display in Jupyter
+
+        """
 
         # Make a frame reader object or just use the provided frames.
         if isinstance(filePathOrFrames, str):
