@@ -8,3 +8,7 @@ The goal of this project was to identify curved lane markings from hood- or dash
 3. Produce polynomial fit lines to the found pixels, both in image space, and in world space. Use the latter to estimate the radius of curvature of the lane, and the car's deviation from center (in meters).
 
 A writeup of these results is visible in "Advanced Lane Finding.ipynb", or rendered to PDF in "report.pdf".
+
+I'd recommend viewing the notebook on Github, since the PDF does not include animations like this:
+
+![project_results.gif](doc/images/project_results.gif)
