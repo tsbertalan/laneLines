@@ -44,7 +44,7 @@ class ComplexPipeline(Pipeline, Boolean):
         L = Dilate(clippedSobelL)
 
         self.output = S | L
-        self.constructColorOutpout(L, L, S)
+        self.constructColorOutput(L, L, S)
 
         self.includeInMultistep([
             clippedSobelL, clippedSobelS,
@@ -75,7 +75,7 @@ class SimplePipeline(Pipeline, Boolean):
         markings_binary = l_binary | s_binary
 
         self.output = markings_binary
-        self.constructColorOutpout(l_binary, l_binary, s_binary)
+        self.constructColorOutput(l_binary, l_binary, s_binary)
 
         self.includeInMultistep([
             perspective, blurred, hls, l_channel, s_channel, 
@@ -196,7 +196,7 @@ class FullPipeline(Pipeline, Boolean):
 
         
         # Make a color summary.
-        self.constructColorOutpout(restrictives[h(Y)], dynamic, restrictives[h(W)])
+        self.constructColorOutput(restrictives[h(Y)], dynamic, restrictives[h(W)])
 
         
         # Set the output.

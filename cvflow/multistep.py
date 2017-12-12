@@ -369,8 +369,8 @@ class Pipeline(MultistepOp):
         return self.value
 
     @cvflow.constantOrOpInput
-    def constructColorOutpout(self, *args, **kwargs):
-        self.colorOutput = super().constructColorOutpout(*args, **kwargs)
+    def constructColorOutput(self, *args, **kwargs):
+        self.colorOutput = super().constructColorOutput(*args, **kwargs)
         self.members = [self.colorOutput]
         return self.colorOutput
 

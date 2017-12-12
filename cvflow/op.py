@@ -521,7 +521,7 @@ class Op:
         self.__cache__[cvflow.misc.cacheKey('shape', newshape)] = newshape
 
     @constantOrOpInput
-    def constructColorOutpout(self, *args, dtype='uint8', scaleUintTo255=True):
+    def constructColorOutput(self, *args, dtype='uint8', scaleUintTo255=True):
         # 'zeros' can be passed for some of the args, but only if
         # self.input.shape is defined.
         # TODO: handle this direcly in ColorJoin; maybe by passing a reference to self. Or by taking the shape of a nonzero parent.value, and degrading to a zero-column if they're all zeros.
